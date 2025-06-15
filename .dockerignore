@@ -1,0 +1,5 @@
+node_modules
+biome.json
+.env
+.env.prod
+.env.dev
