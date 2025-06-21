@@ -121,6 +121,9 @@ export const intentFinder = async (intents, text) => {
     template,
     "You are a world class assistant for finding the intent of the user query."
   );
+
+  console.log("intentFinder data", data);
+
   if (data.intent === -1) {
     return null;
   } else {

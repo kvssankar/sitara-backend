@@ -224,7 +224,7 @@ async function processData(transcript, callSid) {
         session_id: callSid,
         text: transcript,
         type: RunType.AI,
-        isChat: true,
+        isChat: false,
         userId: "684d43c3234f6819aae4d80e",
       });
     } catch (error) {

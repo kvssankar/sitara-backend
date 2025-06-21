@@ -5,6 +5,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import {
   getAIText,
   hasCurlyBracesWithText,
+  extractTextWithinCurlyBraces,
   createToolCode,
   cleanText,
 } from "../utils/index.js";
@@ -439,11 +440,23 @@ Here is the JSON Schema instance your output must adhere to. You must include th
       const finalMessage = this.messages[this.messages.length - 1];
       if (hasCurlyBracesWithText(getAIText(finalMessage))) {
         this.gotAllInputs = true;
-        return {
-          messages: this.messages,
-          done: true,
-          answers: answers,
-        };
+        const jsonOutput = extractTextWithinCurlyBraces(
+          getAIText(finalMessage)
+        );
+        const temp = JSON.parse(jsonOutput);
+        if (temp["all_steps_conveyed"] === "no") {
+          return {
+            messages: this.messages,
+            done: false,
+            answers: answers,
+          };
+        } else {
+          return {
+            messages: this.messages,
+            done: true,
+            answers: answers,
+          };
+        }
       } else {
         return {
           messages: this.messages,
@@ -520,11 +533,14 @@ Here is the JSON Schema instance your output must adhere to. You must include th
       true
     );
     await convertTextToSpeechStream(this.sessionId, cleanText(text));
-    sessionManager.setProperty(callSid, SessionDataProperty.processing, false);
-    //@ts-ignore
+    sessionManager.setProperty(
+      this.sessionId,
+      SessionDataProperty.processing,
+      false
+    );
     sessionManager.setProperty(
       //@ts-ignore
-      callSid,
+      this.sessionId,
       SessionDataProperty.outputBlockProcessing,
       false
     );
