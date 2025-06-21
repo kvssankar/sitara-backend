@@ -9,31 +9,51 @@ import {
 
 const router = express.Router();
 
-const chat = async (sessionId, userId, message) => {
+router.post("/chat", async (req, res) => {
   try {
-    const result = await sessionManager.run({
+    const {
+      text,
+      sessionId = "default",
+      conversationHistory = [],
+      userId,
+    } = req.body;
+
+    const actualUserId = userId || req.headers.authorization || "default";
+
+    // Get or create session (isVoice = false for chat)
+    await sessionManager.getSession(sessionId, actualUserId, false);
+
+    const output = await sessionManager.run({
       session_id: sessionId,
-      text: message,
+      text: text,
       type: RunType.AI,
       isChat: true,
-      userId: userId,
+      userId: actualUserId,
     });
 
-    // Return the text response from the OutputCapture
-    return result.proceed.text || "I'm processing your request...";
-  } catch (error) {
-    console.error("Error in chat:", error);
-    return "Sorry, something went wrong. Please try again.";
-  }
-};
+    console.log("Chat Output:", output);
 
-router.post("/", async (req, res) => {
-  const userId = req.userId;
-  const { text, sessionId } = req.body;
-  const ans = await chat(sessionId, userId, text);
-  res.json({
-    text: cleanText(ans),
-  });
+    if (output.proceed.status === ProceedStatus.TELL_CUSTOMER) {
+      return res.json({
+        response: output.proceed.text,
+        sessionId: output.sessionId,
+      });
+    } else if (output.proceed.status === ProceedStatus.END) {
+      return res.json({
+        response: output.proceed.text,
+        sessionId: output.sessionId,
+        conversationEnded: true,
+      });
+    } else {
+      return res.status(400).json({
+        error: "Unable to process request",
+        status: output.proceed.status,
+      });
+    }
+  } catch (error) {
+    console.error("Chat error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

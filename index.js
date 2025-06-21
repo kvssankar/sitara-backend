@@ -29,7 +29,8 @@ const wss = new WebSocketServer({ server });
 
 wss.on("connection", function connection(ws) {
   let transcriber = new AmazonTranscriber();
-  ws.on("message", function incoming(message) {
+
+  ws.on("message", async function incoming(message) {
     try {
       const msg = JSON.parse(message);
       switch (msg.event) {
@@ -38,9 +39,21 @@ wss.on("connection", function connection(ws) {
         case "start":
           const callSid = msg["start"]["callSid"];
           const streamSid = msg["start"]["streamSid"];
+          const customParameters = msg["start"]["customParameters"] || {};
+          const userId =
+            customParameters.userId ||
+            process.env.DEFAULT_USER_ID ||
+            "684d43c3234f6819aae4d80e";
 
           console.log(
-            `Call started - CallSid: ${callSid}, StreamSid: ${streamSid}`
+            `Call started - CallSid: ${callSid}, StreamSid: ${streamSid}, UserId: ${userId}`
+          );
+
+          // Get session with userId for pre-loading intents (isVoice = true)
+          const session = await sessionManager.getSession(
+            callSid,
+            userId,
+            true
           );
 
           // Store WebSocket and stream information
@@ -66,32 +79,38 @@ wss.on("connection", function connection(ws) {
       console.error("WebSocket message processing error:", error);
     }
   });
+
+  ws.on("close", () => {
+    console.log("WebSocket connection closed");
+    transcriber.close();
+  });
 });
 
+// Update the incoming call handler
 app.post("/", async (req, res) => {
   console.log("Incoming call:", req.body);
-  await sessionManager.getSession(req.body.CallSid);
-  // logger.info({
-  //   type: "twilio",
-  //   sub_type: "incoming-call",
-  //   //@ts-ignore
-  //   session_id: req.body.CallSid
-  // })
-  // console.log(req.body,req.headers)
-  sessionManager.setSessionVariable(
-    req.body.CallSid,
-    "phone_number",
-    req.body.From
-  );
-  res.set("Content-Type", "text/xml");
-  console.log(req.headers.host);
-  res.send(`
+
+  const callSid = req.body.CallSid;
+  const userId =
+    req.body.userId ||
+    process.env.DEFAULT_USER_ID ||
+    "684d43c3234f6819aae4d80e";
+
+  // Create voice session with userId to pre-load intents
+  await sessionManager.getSession(callSid, userId, true);
+
+  // Return TwiML response with custom parameters
+  const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
       <Connect>
-        <Stream url="wss://${req.headers.host}/"/>
+        <Stream url="wss://${req.headers.host}/">
+          <Parameter name="userId" value="${userId}"/>
+        </Stream>
       </Connect>
-    </Response>
-  `);
+    </Response>`;
+
+  res.type("text/xml");
+  res.send(twimlResponse);
 });
 
 app.use((req, res, next) => {

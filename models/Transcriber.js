@@ -205,9 +205,7 @@ export default class AmazonTranscriber {
   }
 }
 
-// Fix the processData function parameter order
 async function processData(transcript, callSid) {
-  // Swapped parameters to match the call
   if (
     !sessionManager.getProperty(callSid, SessionDataProperty.apiProcessing) &&
     !sessionManager.getProperty(
@@ -220,12 +218,15 @@ async function processData(transcript, callSid) {
     )
   ) {
     try {
+      const session = sessionManager.sessions[callSid];
+      const userId = session?.userId || "684d43c3234f6819aae4d80e";
+
       await sessionManager.run({
         session_id: callSid,
         text: transcript,
         type: RunType.AI,
         isChat: false,
-        userId: "684d43c3234f6819aae4d80e",
+        userId: userId,
       });
     } catch (error) {
       console.error("Error processing data:", error);
