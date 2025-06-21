@@ -201,7 +201,9 @@ class SessionManager {
   getSessionVariable(sessionId, key) {
     const session = this.sessions[sessionId];
     if (!session) {
-      throw new Error(`Session ${sessionId} not found.`);
+      throw new Error(
+        `Session ${sessionId} not found during getSessionVariable.`
+      );
     }
     return session.sessionVariables[key];
   }
@@ -209,7 +211,9 @@ class SessionManager {
   setSessionVariable(sessionId, key, value) {
     const session = this.sessions[sessionId];
     if (!session) {
-      throw new Error(`Session ${sessionId} not found.`);
+      throw new Error(
+        `Session ${sessionId} not found during setSessionVariable- ${key} - ${value}`
+      );
     }
     session.sessionVariables[key] = value;
     session.lastActivity = Math.floor(Date.now() / 1000);

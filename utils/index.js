@@ -4,6 +4,24 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+export function cleanText(text) {
+  // Remove everything between curly braces
+  const withoutCurlyBraces = text.replace(/\{.*?\}/gs, "");
+
+  // Remove the word 'json'
+  const withoutJson = withoutCurlyBraces.replace(/json/gi, "");
+
+  const withoutBackticks = withoutJson.replace(/`/g, "");
+
+  const trimmedText = withoutBackticks.trim();
+
+  const removeHyphen = trimmedText.replace(/-/g, " ");
+
+  const cleanText = removeHyphen.replace(/\n\s*\n/g, "\n");
+
+  return cleanText;
+}
+
 export const createToolCode = (code) => `
 import sys
 

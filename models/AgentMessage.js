@@ -6,12 +6,14 @@ import {
   getAIText,
   hasCurlyBracesWithText,
   createToolCode,
+  cleanText,
 } from "../utils/index.js";
 
 import sessionManager from "./SessionManager.js";
 
 import { ProceedStatus, SessionDataProperty } from "../utils/index.js";
 import { OutputCapture } from "./OutputCapture.js";
+import { convertTextToSpeechStream } from "./Synthesizer.js";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -510,9 +512,21 @@ Here is the JSON Schema instance your output must adhere to. You must include th
   }
 
   async sendVoiceResponse(text) {
-    // Import and call your TTS function here
-    // const { convertTextToSpeechStream } = await import("./TTV.js");
-    // await convertTextToSpeechStream(this.sessionId, text);
     console.log(`Voice response: ${text}`);
+    sessionManager.addTranscript(this.sessionId, `AI: ${text}\n`);
+    sessionManager.setProperty(
+      this.sessionId,
+      SessionDataProperty.processing,
+      true
+    );
+    await convertTextToSpeechStream(this.sessionId, cleanText(text));
+    sessionManager.setProperty(callSid, SessionDataProperty.processing, false);
+    //@ts-ignore
+    sessionManager.setProperty(
+      //@ts-ignore
+      callSid,
+      SessionDataProperty.outputBlockProcessing,
+      false
+    );
   }
 }
