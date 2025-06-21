@@ -1,7 +1,6 @@
-import {MongoClient} from "mongodb";
+import { MongoClient } from "mongodb";
 
-const uri =
-  process.env.MONGO_URI;
+const uri = process.env.MONGO_URI;
 const dbName = process.env.MONGO_DB_NAME;
 export const intentsCollectionName = "intents";
 export const usersCollectionName = "users";

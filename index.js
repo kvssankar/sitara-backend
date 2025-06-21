@@ -33,12 +33,11 @@ app.use("/rag", ragRoutes);
 app.use("/tools", toolRoutes);
 app.use("/chat", chatRoutes);
 
-// const PORT = process.env.PORT || 5000;
-// app.listen(PORT, () => {
-//   console.log(`Server running on port ${PORT}`);
-//   console.log(process.env);
-// });
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
-const server = serverlessExpress({ app });
+// const server = serverlessExpress({ app });
 
-export const handler = (event, context) => server(event, context);
+// export const handler = (event, context) => server(event, context);
