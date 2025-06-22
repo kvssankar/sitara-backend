@@ -4,7 +4,7 @@ import { getIntents } from "../utils/crud.js";
 import { performRAGSearch } from "../utils/rag.js";
 import { FastIntentMatcher } from "../utils/FastIntentMatcher.js";
 import { convertTextToSpeechStream } from "./Synthesizer.js";
-import { cleanText, getAIText } from "../utils/index.js";
+import { cleanText, getAIText, intentFinder } from "../utils/index.js";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -102,17 +102,22 @@ Important rules:
     // Process tool calls
     let finalResponse = response;
     let intentFound = false;
+    let finalResponseChanged = false;
+
+    console.log("Claude response:", response);
 
     for (const block of response.content) {
       if (block.type === "tool_use") {
         const toolResult = await this.executeTool(block.name, block.input);
+
+        console.log(`Tool result for ${block.name}:`, toolResult);
 
         // Check if intent was found
         if (block.name === "identify_intent" && toolResult.intent) {
           intentFound = true;
           this.pendingIntent = toolResult.intent;
         }
-
+        finalResponseChanged = true;
         // Send tool result back to Claude for final response
         finalResponse = await client.messages.create({
           model: process.env.ANTHROPIC_MEDIUM_MODEL,
@@ -146,10 +151,12 @@ Important rules:
 
     const responseText = this.extractText(finalResponse);
 
-    await convertTextToSpeechStream(
-      this.session?.sessionId,
-      cleanText(responseText)
-    );
+    if (finalResponseChanged) {
+      await convertTextToSpeechStream(
+        this.session?.sessionId,
+        cleanText(responseText)
+      );
+    }
 
     // Add to history
     this.conversationHistory.push({
@@ -294,31 +301,14 @@ Important rules:
 
       case "identify_intent":
         try {
+          if (!this.session.intents) {
+            this.session.intents = await getIntents(this.userId);
+          }
           // Get intents from session if available
-          let intents = this.session?.intents;
-
-          if (!intents) {
-            intents = await getIntents(this.userId);
-          }
-
-          // Try fast pattern matching first
-          let identifiedIntent = null;
-
-          if (this.session?.intentMatcher) {
-            const quickMatchIndex = this.session.intentMatcher.quickMatch(
-              input.user_message
-            );
-            if (quickMatchIndex !== null) {
-              identifiedIntent = intents[quickMatchIndex];
-            }
-          } else if (intents && intents.length > 0) {
-            // Create matcher if not exists
-            const matcher = new FastIntentMatcher(intents);
-            const quickMatchIndex = matcher.quickMatch(input.user_message);
-            if (quickMatchIndex !== null) {
-              identifiedIntent = intents[quickMatchIndex];
-            }
-          }
+          const identifiedIntent = await intentFinder(
+            this.session.intents,
+            input.user_message
+          );
 
           return {
             success: true,

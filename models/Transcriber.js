@@ -1,6 +1,7 @@
 import {
   TranscribeStreamingClient,
   StartStreamTranscriptionCommand,
+  PartialResultsStability,
 } from "@aws-sdk/client-transcribe-streaming";
 import { RunType, SessionDataProperty } from "../utils/index.js";
 import sessionManager from "./SessionManager.js";
@@ -23,6 +24,8 @@ export default class AmazonTranscriber {
       LanguageCode: "en-US",
       MediaEncoding: "pcm",
       MediaSampleRateHertz: 8000,
+      EnablePartialResultsStabilization: true,
+      PartialResultsStability: PartialResultsStability.MEDIUM,
     };
 
     this.streamController = new AbortController();
@@ -109,34 +112,34 @@ export default class AmazonTranscriber {
                 if (result.IsPartial) {
                   // Handle partial transcripts - stop current voice response
                   if (
-                    !sessionManager.getProperty(
+                    sessionManager.getProperty(
                       this.callSid,
                       SessionDataProperty.apiProcessing
-                    ) &&
-                    !sessionManager.getProperty(
+                    ) ||
+                    sessionManager.getProperty(
                       this.callSid,
                       SessionDataProperty.outputBlockProcessing
-                    ) &&
-                    !sessionManager.getProperty(
+                    ) ||
+                    sessionManager.getProperty(
                       this.callSid,
                       SessionDataProperty.agentLoopProcessing
                     )
                   ) {
-                    sessionManager.setProperty(
-                      this.callSid,
-                      SessionDataProperty.humanSpeaking,
-                      true
+                    console.log(
+                      "Amazon Transcribe Partial ignored script:",
+                      transcript
                     );
+                  } else {
+                    // sessionManager.setProperty(
+                    //   this.callSid,
+                    //   SessionDataProperty.humanSpeaking,
+                    //   true
+                    // );
                     console.log(
                       "Amazon Transcribe Partial script:",
                       transcript
                     );
                     stopVoiceResponse(this.callSid);
-                  } else {
-                    console.log(
-                      "Amazon Transcribe Partial ignored script:",
-                      transcript
-                    );
                   }
                 } else {
                   // Handle final transcripts

@@ -26,15 +26,10 @@ const SESSION_TTL = 3600;
 
 class SessionManager {
   constructor() {
-    console.log("[SessionManager] Initializing SessionManager");
     this.sessions = {};
   }
 
   createNewSession(sessionId, userId = null, isVoice = false) {
-    console.log(
-      `[SessionManager] Creating new session: ${sessionId}, userId: ${userId}, isVoice: ${isVoice}`
-    );
-
     const newSession = {
       id: sessionId,
       sessionId,
@@ -84,21 +79,12 @@ class SessionManager {
       this.preloadIntents(newSession, userId);
     }
 
-    console.log(
-      `[SessionManager] New session created with pre-fetch initiated`
-    );
     return newSession;
   }
 
   async preloadIntents(session, userId) {
-    console.log(
-      `[SessionManager] Pre-loading intents for session: ${session.sessionId}, user: ${userId}`
-    );
-
     try {
       session.intentsLoading = true;
-      const startTime = Date.now();
-
       const intents = await getIntents(userId);
 
       session.intents = intents;
@@ -109,13 +95,6 @@ class SessionManager {
       if (intents && intents.length > 0) {
         session.intentMatcher = new FastIntentMatcher(intents);
       }
-
-      const loadTime = Date.now() - startTime;
-      console.log(
-        `[SessionManager] Pre-loaded ${
-          intents?.length || 0
-        } intents in ${loadTime}ms`
-      );
     } catch (error) {
       console.error(`[SessionManager] Error pre-loading intents:`, error);
       session.intentsLoading = false;
@@ -123,16 +102,9 @@ class SessionManager {
   }
 
   async getSession(sessionId, userId = null, isVoice = false) {
-    console.log(
-      `[SessionManager] Getting session: ${sessionId}, isVoice: ${isVoice}`
-    );
-
     // Check local cache first
     let session = this.sessions[sessionId];
     if (session) {
-      console.log(
-        `[SessionManager] Session found in local cache: ${sessionId}`
-      );
       session.lastActivity = Math.floor(Date.now() / 1000);
 
       // If intents not loaded and we have userId, load them
@@ -149,10 +121,6 @@ class SessionManager {
       return session;
     }
 
-    console.log(
-      `[SessionManager] Session not in cache, querying DynamoDB: ${sessionId}`
-    );
-
     // Attempt to retrieve session from DynamoDB for both chat and voice
     const params = {
       TableName: TABLE_NAME,
@@ -161,27 +129,13 @@ class SessionManager {
       },
     };
 
-    console.log(`[SessionManager] DynamoDB query params:`, params);
-
     try {
       const result = await dynamoDbClient.send(new GetItemCommand(params));
-      console.log(`[SessionManager] DynamoDB query result:`, {
-        hasItem: !!result.Item,
-        sessionId,
-      });
 
       if (result.Item) {
-        console.log(
-          `[SessionManager] Deserializing session data for: ${sessionId}`
-        );
         // Deserialize the session data
         const sessionDataStr = result.Item.data.S;
         const sessionDataObj = JSON.parse(sessionDataStr);
-
-        console.log(
-          `[SessionManager] Parsed session data keys:`,
-          Object.keys(sessionDataObj)
-        );
 
         // Reset transient properties
         sessionDataObj.processing = false;
@@ -210,13 +164,8 @@ class SessionManager {
           );
         }
 
-        console.log(
-          `[SessionManager] Reset transient properties for session: ${sessionId}`
-        );
-
         // Cache the session locally
         this.sessions[sessionId] = sessionDataObj;
-        console.log(`[SessionManager] Cached session locally: ${sessionId}`);
 
         // If intents not loaded and we have userId, load them
         if (
@@ -228,43 +177,27 @@ class SessionManager {
           this.preloadIntents(sessionDataObj, userId);
         }
       } else {
-        console.log(
-          `[SessionManager] Session not found in DynamoDB, creating new: ${sessionId}`
-        );
         // Create a new session if not found
         const newSession = this.createNewSession(sessionId, userId, isVoice);
         await this.saveSession(newSession);
         this.sessions[sessionId] = newSession;
-        console.log(
-          `[SessionManager] New session created and saved: ${sessionId}`
-        );
       }
     } catch (error) {
       console.error(
         `[SessionManager] Error retrieving session from DynamoDB: ${sessionId}`,
         error
       );
-      console.error(`[SessionManager] Error details:`, {
-        message: error.message,
-        code: error.code,
-        statusCode: error.$metadata?.httpStatusCode,
-      });
 
       // Fallback to local session
-      console.log(
-        `[SessionManager] Creating fallback local session: ${sessionId}`
-      );
       const newSession = this.createNewSession(sessionId, userId, isVoice);
       this.sessions[sessionId] = newSession;
     }
 
-    console.log(`[SessionManager] Returning session: ${sessionId}`);
     return this.sessions[sessionId];
   }
 
   async saveSession(session) {
     const sessionId = session.id;
-    console.log(`[SessionManager] Saving session: ${sessionId}`);
 
     if (!sessionId) {
       const error = "Session must have a sessionId.";
@@ -273,7 +206,6 @@ class SessionManager {
     }
 
     const { expiresAt } = this.getTimestamps();
-    console.log(`[SessionManager] Session expiry timestamp: ${expiresAt}`);
 
     // Create a copy without transient properties for storage
     const persistentSession = {
@@ -291,25 +223,7 @@ class SessionManager {
       expiresAt,
     };
 
-    console.log(`[SessionManager] Persistent session properties:`, {
-      id: persistentSession.id,
-      sessionId: persistentSession.sessionId,
-      messagesCount: persistentSession.messages?.length || 0,
-      sessionVariablesKeys: Object.keys(
-        persistentSession.sessionVariables || {}
-      ),
-      expiresAt: persistentSession.expiresAt,
-      hasIntent: !!persistentSession.intent,
-      isVoice: persistentSession.isVoice,
-      userId: persistentSession.userId,
-      intentsCount: persistentSession.intents?.length || 0,
-      awaitingIntentConfirmation: persistentSession.awaitingIntentConfirmation,
-    });
-
     const serializedSession = JSON.stringify(persistentSession);
-    console.log(
-      `[SessionManager] Serialized session size: ${serializedSession.length} characters`
-    );
 
     const params = {
       TableName: TABLE_NAME,
@@ -327,31 +241,15 @@ class SessionManager {
       },
     };
 
-    console.log(
-      `[SessionManager] DynamoDB update params for session: ${sessionId}`
-    );
-
     try {
       await dynamoDbClient.send(new UpdateItemCommand(params));
-      console.log(
-        `[SessionManager] Successfully saved session to DynamoDB: ${sessionId}`
-      );
-
       // Update local cache
       this.sessions[sessionId] = session;
-      console.log(
-        `[SessionManager] Updated local cache for session: ${sessionId}`
-      );
     } catch (error) {
       console.error(
         `[SessionManager] Error saving session to DynamoDB: ${sessionId}`,
         error
       );
-      console.error(`[SessionManager] Save error details:`, {
-        message: error.message,
-        code: error.code,
-        statusCode: error.$metadata?.httpStatusCode,
-      });
     }
   }
 
@@ -366,7 +264,6 @@ class SessionManager {
   }
 
   resetSession(sessionId) {
-    console.log(`[SessionManager] Resetting session: ${sessionId}`);
     const oldSession = this.sessions[sessionId];
     const newSession = this.createNewSession(
       sessionId,
@@ -374,15 +271,9 @@ class SessionManager {
       oldSession?.isVoice
     );
     this.sessions[sessionId] = newSession;
-    console.log(`[SessionManager] Session reset complete: ${sessionId}`);
-    // Note: You might want to also clear from DynamoDB
   }
 
   setProperty(sessionId, property, value) {
-    console.log(
-      `[SessionManager] Setting property for session ${sessionId}: ${property} = ${value}`
-    );
-
     if (!this.sessions[sessionId]) {
       const error = `Session ${sessionId} not found. Call getSession first.`;
       console.error(`[SessionManager] SetProperty error: ${error}`);
@@ -442,9 +333,6 @@ class SessionManager {
   getTimestamps() {
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + SESSION_TTL;
-    console.log(
-      `[SessionManager] Generated timestamps - now: ${now}, expiresAt: ${expiresAt}, TTL: ${SESSION_TTL}`
-    );
     return { now, expiresAt };
   }
 
@@ -458,9 +346,6 @@ class SessionManager {
     sessionIds.forEach((sessionId) => {
       const session = this.sessions[sessionId];
       if (session.lastActivity && now - session.lastActivity > maxAge) {
-        console.log(
-          `[SessionManager] Cleaning up expired session: ${sessionId}`
-        );
         delete this.sessions[sessionId];
         cleanedCount++;
       }
@@ -472,16 +357,6 @@ class SessionManager {
   }
 
   async run(options) {
-    console.log(`[SessionManager] Running with options:`, {
-      session_id: options.session_id,
-      type: options.type,
-      text:
-        options.text?.substring(0, 100) +
-        (options.text?.length > 100 ? "..." : ""),
-      userId: options.userId,
-      isChat: options.isChat,
-    });
-
     const session = await this.getSession(
       options.session_id,
       options.userId,
@@ -510,19 +385,12 @@ class SessionManager {
   }
 
   async processAIRequest(options, session) {
-    console.log(
-      `[SessionManager] Processing AI request for session: ${options.session_id}`
-    );
-
     // Voice-specific transfer handling
     if (!options.isChat) {
       const transferKeywords = ["agent", "representative", "human", "person"];
       const lowerText = options.text.toLowerCase();
 
       if (transferKeywords.some((keyword) => lowerText.includes(keyword))) {
-        console.log(
-          `[SessionManager] Transfer keyword detected: ${options.text}`
-        );
         return new OutputCapture({
           proceed: {
             status: ProceedStatus.PASS_TO_HUMAN,
@@ -535,14 +403,8 @@ class SessionManager {
 
     // Check if already transferred
     const isTransferred = session.sessionVariables["is_transferred"];
-    console.log(
-      `[SessionManager] Checking transfer status for session ${options.session_id}: ${isTransferred}`
-    );
 
     if (isTransferred) {
-      console.log(
-        `[SessionManager] Session already transferred, passing to human: ${options.session_id}`
-      );
       return new OutputCapture({
         proceed: {
           status: ProceedStatus.PASS_TO_HUMAN,
@@ -553,24 +415,13 @@ class SessionManager {
     }
 
     try {
-      console.log(
-        `[SessionManager] Processing message for AI request: ${options.session_id}`
-      );
       const result = await this.processMessage(options, session);
-      console.log(
-        `[SessionManager] Message processed successfully for session: ${options.session_id}`
-      );
-
       return result;
     } catch (error) {
       console.error(
         `[SessionManager] Error processing AI request for session ${options.session_id}:`,
         error
       );
-      console.error(`[SessionManager] AI request error details:`, {
-        message: error.message,
-        stack: error.stack,
-      });
 
       return new OutputCapture({
         proceed: {
@@ -586,17 +437,6 @@ class SessionManager {
   }
 
   async processMessage(options, session) {
-    console.log(
-      `[SessionManager] Processing message for session: ${options.session_id}`
-    );
-    console.log(`[SessionManager] Current session intent status:`, {
-      hasIntent: !!session.intent,
-      intentId: session.intent?.id || "none",
-      hasIntents: !!session.intents,
-      intentsCount: session.intents?.length || 0,
-      awaitingIntentConfirmation: session.awaitingIntentConfirmation,
-    });
-
     // If we already have a confirmed intent, proceed with the workflow
     if (session.intent && !session.awaitingIntentConfirmation) {
       return await this.processIntentMessage(options, session);
@@ -615,23 +455,8 @@ class SessionManager {
       options.text
     );
 
-    console.log(`[SessionManager] Conversational agent response:`, {
-      hasText: !!agentResponse.text,
-      awaitingConfirmation: agentResponse.awaitingConfirmation,
-      hasPendingIntent: !!agentResponse.pendingIntent,
-      hasConfirmedIntent: !!agentResponse.confirmedIntent,
-      proceedToWorkflow: agentResponse.proceedToWorkflow,
-    });
-
     // Handle intent confirmation
     if (agentResponse.proceedToWorkflow && agentResponse.confirmedIntent) {
-      console.log(
-        `[SessionManager] Intent confirmed, proceeding to workflow:`,
-        {
-          id: agentResponse.confirmedIntent._id,
-          name: agentResponse.confirmedIntent.intent,
-        }
-      );
       session.intent = agentResponse.confirmedIntent;
       session.awaitingIntentConfirmation = false;
 
@@ -660,40 +485,17 @@ class SessionManager {
   }
 
   async processIntentMessage(options, session) {
-    console.log(
-      `[SessionManager] Processing intent message for session: ${options.session_id}`
-    );
-
     const intent = session.intent;
-    console.log(`[SessionManager] Intent details:`, {
-      id: intent._id,
-      name: intent.intent || "unnamed",
-      currentMessagesCount: intent.messages?.length || 0,
-      hasSteps: !!intent.steps,
-      hasFunctions: !!intent.functions,
-    });
 
     if (!intent.messages) {
-      console.log(
-        `[SessionManager] Initializing messages array for intent: ${intent._id}`
-      );
       intent.messages = [];
     }
 
-    console.log(
-      `[SessionManager] Adding user message to intent: ${options.text?.substring(
-        0,
-        100
-      )}...`
-    );
     intent.messages.push({
       content: options.text,
       role: "user",
     });
 
-    console.log(
-      `[SessionManager] Creating AgentMessage for session: ${options.session_id}`
-    );
     const agentMessage = new AgentMessage(
       options.session_id,
       intent.messages,
@@ -702,23 +504,10 @@ class SessionManager {
       options.isChat
     );
 
-    console.log(
-      `[SessionManager] Processing response with AgentMessage for session: ${options.session_id}`
-    );
     const { messages, done, answers, outputCapture } =
       await agentMessage.processResponse({
         text: options.text,
       });
-
-    console.log(
-      `[SessionManager] AgentMessage response for session ${options.session_id}:`,
-      {
-        messagesCount: messages?.length || 0,
-        done,
-        answersCount: answers?.length || 0,
-        hasOutputCapture: !!outputCapture,
-      }
-    );
 
     session.intent.messages = messages;
 
@@ -727,16 +516,7 @@ class SessionManager {
         ? answers[answers.length - 1]
         : "I'm processing your request...";
 
-    console.log(
-      `[SessionManager] Response text for session ${
-        options.session_id
-      }: ${responseText?.substring(0, 100)}...`
-    );
-
     if (done) {
-      console.log(
-        `[SessionManager] Intent processing complete for session: ${options.session_id}`
-      );
       session.intent = null;
       session.awaitingIntentConfirmation = false;
 
@@ -757,15 +537,9 @@ class SessionManager {
     }
 
     if (outputCapture) {
-      console.log(
-        `[SessionManager] Returning custom output capture for session: ${options.session_id}`
-      );
       return outputCapture;
     }
 
-    console.log(
-      `[SessionManager] Returning standard response for session: ${options.session_id}`
-    );
     return new OutputCapture({
       proceed: {
         status: ProceedStatus.TELL_CUSTOMER,
@@ -776,9 +550,6 @@ class SessionManager {
   }
 
   async processHumanRequest(options, session) {
-    console.log(
-      `[SessionManager] Processing HUMAN request for session: ${options.session_id}`
-    );
     // Handle human agent responses
     return new OutputCapture({
       proceed: {
@@ -791,13 +562,9 @@ class SessionManager {
 }
 
 // Create singleton instance
-console.log("[SessionManager] Creating singleton SessionManager instance");
 const sessionManager = new SessionManager();
 
 // Periodic cleanup
-console.log(
-  "[SessionManager] Setting up periodic session cleanup (every 5 minutes)"
-);
 setInterval(() => {
   sessionManager.cleanupSessions();
 }, 300000); // Every 5 minutes
