@@ -83,7 +83,7 @@ export const callClaudeOnce = async (text, systemPrompt) => {
   ];
   try {
     const result = await client.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: process.env.ANTHROPIC_MEDIUM_MODEL,
       temperature: 0.2,
       max_tokens: 1024,
       messages: messages,

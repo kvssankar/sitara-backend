@@ -16,6 +16,7 @@ import {
 import { getIntents } from "../utils/crud.js";
 import { OutputCapture } from "./OutputCapture.js";
 import { FastIntentMatcher } from "../utils/FastIntentMatcher.js";
+import ConversationalAgent from "./ConversationalAgent.js";
 
 const dynamoDbClient = new DynamoDBClient({
   region: process.env.AWS_REGION || "us-east-1",
@@ -49,6 +50,10 @@ class SessionManager {
       intentsLoadedAt: null,
       intentMatcher: null,
       intent: null,
+
+      // Conversational agent
+      conversationalAgent: null,
+      awaitingIntentConfirmation: false,
 
       // Mutex flags
       processing: false,
@@ -136,6 +141,11 @@ class SessionManager {
         this.preloadIntents(session, userId);
       }
 
+      // Initialize conversational agent if needed
+      if (!session.conversationalAgent && userId) {
+        session.conversationalAgent = new ConversationalAgent(userId, session);
+      }
+
       return session;
     }
 
@@ -183,11 +193,20 @@ class SessionManager {
         sessionDataObj.streamSid = "";
         sessionDataObj.lastActivity = Math.floor(Date.now() / 1000);
         sessionDataObj.intentsLoading = false;
+        sessionDataObj.conversationalAgent = null;
 
         // Recreate intent matcher if intents exist
         if (sessionDataObj.intents && sessionDataObj.intents.length > 0) {
           sessionDataObj.intentMatcher = new FastIntentMatcher(
             sessionDataObj.intents
+          );
+        }
+
+        // Initialize conversational agent
+        if (sessionDataObj.userId) {
+          sessionDataObj.conversationalAgent = new ConversationalAgent(
+            sessionDataObj.userId,
+            sessionDataObj
           );
         }
 
@@ -268,6 +287,7 @@ class SessionManager {
       humanSpeaking: false,
       intentsLoading: false, // Don't persist loading state
       intentMatcher: null, // Don't persist matcher object
+      conversationalAgent: null, // Don't persist agent instance
       expiresAt,
     };
 
@@ -283,6 +303,7 @@ class SessionManager {
       isVoice: persistentSession.isVoice,
       userId: persistentSession.userId,
       intentsCount: persistentSession.intents?.length || 0,
+      awaitingIntentConfirmation: persistentSession.awaitingIntentConfirmation,
     });
 
     const serializedSession = JSON.stringify(persistentSession);
@@ -573,79 +594,69 @@ class SessionManager {
       intentId: session.intent?.id || "none",
       hasIntents: !!session.intents,
       intentsCount: session.intents?.length || 0,
+      awaitingIntentConfirmation: session.awaitingIntentConfirmation,
     });
 
-    // Intent finding logic
-    if (!session.intent) {
-      console.log(
-        `[SessionManager] No current intent, finding intent for session: ${options.session_id}`
-      );
-
-      // Wait briefly for intents if still loading
-      if (session.intentsLoading) {
-        console.log(`[SessionManager] Intents still loading, waiting...`);
-        await this.waitForIntents(session);
-      }
-
-      if (!session.intents) {
-        console.log(
-          `[SessionManager] Loading intents for user: ${
-            options.userId || "default"
-          }`
-        );
-        session.intents = await getIntents(options.userId || "default");
-        console.log(
-          `[SessionManager] Loaded ${session.intents?.length || 0} intents`
-        );
-
-        // Create fast matcher after loading
-        if (session.intents && session.intents.length > 0) {
-          session.intentMatcher = new FastIntentMatcher(session.intents);
-        }
-      }
-
-      // Try fast pattern matching first
-      let intent = null;
-
-      if (session.intentMatcher) {
-        const quickMatchIndex = session.intentMatcher.quickMatch(options.text);
-        if (quickMatchIndex !== null) {
-          intent = session.intents[quickMatchIndex];
-          console.log(
-            `[SessionManager] Fast pattern match found: ${intent.intent}`
-          );
-        }
-      }
-
-      // Fall back to Claude if no pattern match
-      if (!intent) {
-        console.log(`[SessionManager] No pattern match, using Claude AI`);
-        intent = await intentFinder(session.intents, options.text);
-      }
-
-      if (intent) {
-        console.log(`[SessionManager] Intent found:`, {
-          id: intent._id,
-          name: intent.intent || "unnamed",
-        });
-        session.intent = intent;
-      } else {
-        console.log(`[SessionManager] No intent found, requesting elaboration`);
-        return new OutputCapture({
-          proceed: {
-            status: ProceedStatus.TELL_CUSTOMER,
-            text: options.isChat
-              ? "Can u pls elaborate?"
-              : "Can you please tell me more about what you need help with?",
-          },
-          sessionId: options.session_id,
-        });
-      }
-    }
-
-    if (session.intent) {
+    // If we already have a confirmed intent, proceed with the workflow
+    if (session.intent && !session.awaitingIntentConfirmation) {
       return await this.processIntentMessage(options, session);
     }
+
+    // Initialize conversational agent if needed
+    if (!session.conversationalAgent) {
+      session.conversationalAgent = new ConversationalAgent(
+        options.userId || "default",
+        session
+      );
+    }
+
+    // Process message with conversational agent
+    const agentResponse = await session.conversationalAgent.processMessage(
+      options.text
+    );
+
+    console.log(`[SessionManager] Conversational agent response:`, {
+      hasText: !!agentResponse.text,
+      awaitingConfirmation: agentResponse.awaitingConfirmation,
+      hasPendingIntent: !!agentResponse.pendingIntent,
+      hasConfirmedIntent: !!agentResponse.confirmedIntent,
+      proceedToWorkflow: agentResponse.proceedToWorkflow,
+    });
+
+    // Handle intent confirmation
+    if (agentResponse.proceedToWorkflow && agentResponse.confirmedIntent) {
+      console.log(
+        `[SessionManager] Intent confirmed, proceeding to workflow:`,
+        {
+          id: agentResponse.confirmedIntent._id,
+          name: agentResponse.confirmedIntent.intent,
+        }
+      );
+      session.intent = agentResponse.confirmedIntent;
+      session.awaitingIntentConfirmation = false;
+
+      // Reset conversational agent for next interaction
+      session.conversationalAgent.reset();
+
+      // Process the confirmed intent
+      return await this.processIntentMessage(options, session);
+    }
+
+    // Update session state for pending confirmation
+    if (agentResponse.awaitingConfirmation) {
+      session.awaitingIntentConfirmation = true;
+    } else {
+      session.awaitingIntentConfirmation = false;
+    }
+
+    // Return conversational response
+    return new OutputCapture({
+      proceed: {
+        status: ProceedStatus.TELL_CUSTOMER,
+        text: agentResponse.text,
+      },
+      sessionId: options.session_id,
+    });
   }
 
   async processIntentMessage(options, session) {
@@ -655,8 +666,8 @@ class SessionManager {
 
     const intent = session.intent;
     console.log(`[SessionManager] Intent details:`, {
-      id: intent.id,
-      name: intent.name || "unnamed",
+      id: intent._id,
+      name: intent.intent || "unnamed",
       currentMessagesCount: intent.messages?.length || 0,
       hasSteps: !!intent.steps,
       hasFunctions: !!intent.functions,
@@ -664,7 +675,7 @@ class SessionManager {
 
     if (!intent.messages) {
       console.log(
-        `[SessionManager] Initializing messages array for intent: ${intent.id}`
+        `[SessionManager] Initializing messages array for intent: ${intent._id}`
       );
       intent.messages = [];
     }
@@ -727,6 +738,13 @@ class SessionManager {
         `[SessionManager] Intent processing complete for session: ${options.session_id}`
       );
       session.intent = null;
+      session.awaitingIntentConfirmation = false;
+
+      // Reset conversational agent for next interaction
+      if (session.conversationalAgent) {
+        session.conversationalAgent.reset();
+      }
+
       return new OutputCapture({
         proceed: {
           status: ProceedStatus.END,

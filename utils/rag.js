@@ -193,3 +193,55 @@ export const removeFileFromKnowledge = async (userId, fileName) => {
   deleteFileFromS3(fileName);
   deleteAllRecords(userId, fileName);
 };
+
+export const performRAGSearch = async (query, userId, topK = 5) => {
+  try {
+    // Create embeddings for the search query
+    const embedder = new BedrockEmbeddings({
+      region: "us-east-1",
+      model: "amazon.titan-embed-text-v1",
+    });
+
+    // Generate embedding for the query
+    const queryEmbedding = await embedder.embedQuery(query);
+
+    // Search in Pinecone with user-specific filter
+    const searchResults = await pcIndex.query({
+      vector: queryEmbedding,
+      topK,
+      includeMetadata: true,
+      filter: {
+        userId: { $eq: userId },
+      },
+    });
+
+    // Format results for easier consumption
+    const formattedResults = searchResults.matches.map((match) => ({
+      score: match.score,
+      text: match.metadata.text,
+      source: match.metadata.source,
+      id: match.id,
+    }));
+
+    // Filter out low-relevance results (optional, adjust threshold as needed)
+    const relevantResults = formattedResults.filter(
+      (result) => result.score > 0.7
+    );
+
+    return {
+      query,
+      results: relevantResults,
+      count: relevantResults.length,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error performing RAG search:", error);
+    return {
+      query,
+      results: [],
+      count: 0,
+      success: false,
+      error: error.message,
+    };
+  }
+};

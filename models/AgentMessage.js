@@ -256,7 +256,7 @@ Here is the JSON Schema instance your output must adhere to. You must include th
     while (attempts < maxAttempts) {
       try {
         const response = await client.messages.create({
-          model: "claude-3-5-sonnet-20240620",
+          model: process.env.ANTHROPIC_MEDIUM_MODEL,
           temperature: 0.2,
           max_tokens: 1024,
           messages: messages || this.messages,
