@@ -5,6 +5,8 @@ import {
 import { RunType, SessionDataProperty } from "../utils/index.js";
 import sessionManager from "./SessionManager.js";
 import { stopVoiceResponse } from "./Synthesizer.js";
+import alawmulaw from "alawmulaw";
+const { mulaw } = alawmulaw;
 
 export default class AmazonTranscriber {
   keepAlive = true;
@@ -78,33 +80,13 @@ export default class AmazonTranscriber {
   }
 
   convertMulawToPCM(mulawBuffer) {
-    // Convert μ-law to PCM 16-bit
-    const pcmBuffer = Buffer.alloc(mulawBuffer.length * 2);
-
-    for (let i = 0; i < mulawBuffer.length; i++) {
-      const mulawByte = mulawBuffer[i];
-      const pcmValue = this.mulawToPCM(mulawByte);
-      pcmBuffer.writeInt16LE(pcmValue, i * 2);
-    }
-
-    return pcmBuffer;
-  }
-
-  mulawToPCM(mulawByte) {
-    // μ-law decompression algorithm
-    const BIAS = 0x84;
-    const CLIP = 32635;
-
-    mulawByte = ~mulawByte;
-    const sign = mulawByte & 0x80 ? -1 : 1;
-    const exponent = (mulawByte >> 4) & 0x07;
-    const mantissa = mulawByte & 0x0f;
-
-    let sample = mantissa << (exponent + 3);
-    sample += BIAS;
-    if (exponent === 0) sample += 0x20;
-
-    return sign * Math.min(sample, CLIP);
+    const muLawSamples = new Uint8Array(
+      mulawBuffer.buffer,
+      mulawBuffer.byteOffset,
+      mulawBuffer.length
+    );
+    const pcmSamples = mulaw.decode(muLawSamples);
+    return Buffer.from(pcmSamples.buffer);
   }
 
   async processTranscriptionResults(response) {
