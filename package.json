@@ -20,6 +20,7 @@
     "@aws-sdk/client-polly": "^3.830.0",
     "@aws-sdk/client-s3": "^3.717.0",
     "@aws-sdk/client-transcribe-streaming": "^3.830.0",
+    "@aws-sdk/lib-dynamodb": "^3.830.0",
     "@aws-sdk/s3-request-presigner": "^3.717.0",
     "@langchain/aws": "^0.1.2",
     "@langchain/core": "^0.3.26",

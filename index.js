@@ -11,6 +11,8 @@ import { WebSocketServer } from "ws";
 import AmazonTranscriber from "./models/Transcriber.js";
 import sessionManager from "./models/SessionManager.js";
 import { SessionDataProperty } from "./utils/index.js";
+import supportRoutes from "./routes/support.js";
+
 import http from "http";
 const app = express();
 
@@ -127,6 +129,7 @@ app.use("/intents", intentRoutes);
 app.use("/rag", ragRoutes);
 app.use("/tools", toolRoutes);
 app.use("/chat", chatRoutes);
+app.use("/support", supportRoutes);
 
 const PORT = process.env.PORT || 5000;
 
