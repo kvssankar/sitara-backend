@@ -1,13 +1,14 @@
 // AgentMessage.js
 
 import Anthropic from "@anthropic-ai/sdk";
-import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import {
   getAIText,
   hasCurlyBracesWithText,
   extractTextWithinCurlyBraces,
   createToolCode,
   cleanText,
+  executePythonScript,
+  generateTools,
 } from "../utils/index.js";
 
 import sessionManager from "./SessionManager.js";
@@ -19,96 +20,6 @@ import { convertTextToSpeechStream } from "./Synthesizer.js";
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
-const lambdaClient = new LambdaClient({ region: "us-east-1" });
-
-// Lambda execution function from your original code
-export const executePythonScript = async (options) => {
-  const { apiCode, args = "{}" } = options;
-  if (!apiCode) throw new Error("No code provided");
-  if (typeof args !== "string")
-    throw new Error("Arguments should be a JSON string");
-
-  // build payload for your RunPythonCode Lambda
-  const payload = JSON.stringify({ code: apiCode, args });
-
-  // invoke the Python Lambda
-  const command = new InvokeCommand({
-    FunctionName: process.env.PYTHON_LAMBDA_NAME,
-    InvocationType: "RequestResponse",
-    Payload: Buffer.from(payload),
-  });
-
-  const response = await lambdaClient.send(command);
-  if (response.FunctionError) {
-    throw new Error(`Python Lambda error: ${response.FunctionError}`);
-  }
-
-  // parse out the result
-  const resPayload = JSON.parse(Buffer.from(response.Payload).toString());
-  const body = JSON.parse(resPayload.body);
-
-  if (body.success) {
-    return {
-      result: body.result, // your block_handler return value
-    };
-  } else {
-    return {
-      error: body.error || "An error occurred in the tool execution",
-    };
-  }
-};
-
-// Generate tools function from your original code
-export function generateTools(tools) {
-  let Atools = [];
-  let functions = {};
-  for (const s of tools) {
-    const tool = {
-      name: s.name,
-      description: s.description,
-      input_schema: {
-        type: "object",
-        properties: {},
-      },
-    };
-    for (const p of s.params) {
-      if (p.type === "enum") {
-        tool.input_schema.properties[p.name] = {
-          type: p.type,
-          description: p.description,
-          values: p.values,
-        };
-      } else {
-        tool.input_schema.properties[p.name] = {
-          type: p.type,
-          description: p.description,
-        };
-      }
-    }
-    tool.input_schema.required = Object.keys(tool.input_schema.properties);
-    Atools.push(tool);
-    functions[s.name] = async (obj) => {
-      try {
-        console.log("input to function:", obj);
-        const data = await executePythonScript({
-          apiCode: createToolCode(s.code),
-          args: JSON.stringify(obj),
-        });
-
-        return data?.result;
-      } catch (e) {
-        console.log(e);
-        return "something went wrong";
-      }
-    };
-  }
-  console.log(JSON.stringify(tools, null, 2));
-  return {
-    tools: Atools,
-    functions: functions,
-  };
-}
 
 export class AgentMessage {
   constructor(sessionId, messages, steps, schema, isChat = true) {

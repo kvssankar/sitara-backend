@@ -274,3 +274,31 @@ export const updateMessage = async (messageId, updates) => {
 
   return updatedMessage;
 };
+
+export const addIntentToCase = async (caseId, intentId) => {
+  const supportCase = await getItem(TABLES.SUPPORT_CASES, { caseId });
+  if (!supportCase) {
+    throw new Error(`Support case not found: ${caseId}`);
+  }
+
+  const intent = supportCase.intent; // it is a string
+
+  const updatedCase = await updateItem(
+    TABLES.SUPPORT_CASES,
+    { caseId },
+    "SET intent = :intent",
+    { ":intent": intentId }
+  );
+};
+
+const test = async () => {
+  try {
+    const caseId = "u63z2l6HqKH9RL1UC0duE";
+    const scase = await getCaseMessages(caseId);
+    console.log("Support Case:", scase);
+  } catch (error) {
+    console.error("Error fetching support case:", error.message);
+  }
+};
+
+// test();

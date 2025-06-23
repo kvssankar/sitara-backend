@@ -12,8 +12,10 @@ import {
   addInternalNote,
 } from "../utils/supportCrud.js";
 import { getPresignedUploadUrl } from "../utils/supportFiles.js";
+import SupportAgent from "../models/SupportAgent.js";
 
 const router = express.Router();
+const supportAgent = new SupportAgent();
 
 // Support Case Routes
 router.post("/cases", async (req, res) => {
@@ -32,6 +34,11 @@ router.post("/cases", async (req, res) => {
       description,
       priority
     );
+
+    setTimeout(() => {
+      supportAgent.processNewTicket(supportCase.caseId);
+    }, 15000);
+
     res.status(201).json(supportCase);
   } catch (error) {
     console.error("Error creating support case:", error);
@@ -164,6 +171,42 @@ router.post("/cases/:caseId/upload-url", async (req, res) => {
     res.json(uploadInfo);
   } catch (error) {
     console.error("Error generating upload URL:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Case Summary Routes
+router.get("/cases/:caseId/summary", async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const forceRegenerate = req.query.force === "true";
+
+    const result = await supportAgent.getCaseSummary(caseId, forceRegenerate);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error) {
+    console.error("Error getting case summary:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/cases/:caseId/summary", async (req, res) => {
+  try {
+    const { caseId } = req.params;
+
+    const result = await supportAgent.generateCaseSummary(caseId);
+
+    if (result.success) {
+      res.status(201).json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error) {
+    console.error("Error generating case summary:", error);
     res.status(500).json({ error: error.message });
   }
 });
