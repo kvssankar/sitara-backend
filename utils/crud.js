@@ -6,6 +6,24 @@ import {
 import { nanoid } from "nanoid";
 import { DOCS_BUCKET_NAME } from "./rag.js";
 import { ObjectId } from "mongodb";
+import { createDocuments, searchDocumentsDirectly } from "./intent-rag.js";
+
+createDocuments("example intent", process.env.OPENSEARCH_INDEX, {
+  id: "user123",
+})
+  .then((response) => {
+    console.log("Intent stored:", response);
+    searchDocumentsDirectly("example intent")
+      .then((intent) => {
+        console.log("Intent found:", intent);
+      })
+      .catch((error) => {
+        console.error("Error finding intent:", error);
+      });
+  })
+  .catch((error) => {
+    console.error("Error storing intent:", error);
+  });
 
 //intent schema
 

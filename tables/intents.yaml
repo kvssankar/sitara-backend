@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AWSTemplateFormatVersion>2010-09-09</AWSTemplateFormatVersion>
+<Description>Cost-optimized DynamoDB table for demo intent storage</Description>
+
+<Parameters>
+  <TableName>
+    <Type>String</Type>
+    <Default>Intents</Default>
+    <Description>Name of the DynamoDB table</Description>
+  </TableName>
+</Parameters>
+
+<Resources>
+  <!-- DynamoDB Table -->
+  <IntentsTable>
+    <Type>AWS::DynamoDB::Table</Type>
+    <Properties>
+      <TableName>
+        <Ref>TableName</Ref>
+      </TableName>
+      
+      <!-- On-demand billing - only pay for what you use -->
+      <BillingMode>PAY_PER_REQUEST</BillingMode>
+      
+      <!-- Attribute Definitions -->
+      <AttributeDefinitions>
+        <AttributeDefinition>
+          <AttributeName>intentId</AttributeName>
+          <AttributeType>S</AttributeType>
+        </AttributeDefinition>
+      </AttributeDefinitions>
+      
+      <!-- Key Schema -->
+      <KeySchema>
+        <KeySchemaElement>
+          <AttributeName>intentId</AttributeName>
+          <KeyType>HASH</KeyType>
+        </KeySchemaElement>
+      </KeySchema>
+      
+      <!-- Minimal tags for demo -->
+      <Tags>
+        <Tag>
+          <Key>Environment</Key>
+          <Value>Demo</Value>
+        </Tag>
+        <Tag>
+          <Key>Purpose</Key>
+          <Value>IntentStorage</Value>
+        </Tag>
+      </Tags>
+    </Properties>
+  </IntentsTable>
+</Resources>
+
+<Outputs>
+  <TableName>
+    <Description>Name of the created DynamoDB table</Description>
+    <Value>
+      <Ref>IntentsTable</Ref>
+    </Value>
+  </TableName>
+  
+  <TableArn>
+    <Description>ARN of the created DynamoDB table</Description>
+    <Value>
+      <Fn::GetAtt>IntentsTable.Arn</Fn::GetAtt>
+    </Value>
+  </TableArn>
+</Outputs>
