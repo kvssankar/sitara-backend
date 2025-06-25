@@ -106,7 +106,6 @@ export const generateTools = (tools) => {
     Atools.push(tool);
     functions[s.name] = async (obj) => {
       try {
-        console.log("input to function:", obj);
         const data = await executePythonScript({
           apiCode: createToolCode(s.code),
           args: JSON.stringify(obj),
@@ -119,7 +118,6 @@ export const generateTools = (tools) => {
       }
     };
   }
-  console.log(JSON.stringify(tools, null, 2));
   return {
     tools: Atools,
     functions: functions,
@@ -131,10 +129,26 @@ export function hasCurlyBracesWithText(inputString) {
   return regex.test(inputString);
 }
 
-export function extractTextWithinCurlyBraces(inputString) {
-  const regex = /\{[^{}]*\}/;
-  const match = inputString.match(regex);
-  return match ? match[0] : null;
+export function extractTextWithinCurlyBraces(str) {
+  const start = str.indexOf("{");
+  if (start === -1) return null; // no opening brace
+
+  let depth = 0;
+  for (let i = start; i < str.length; i++) {
+    const ch = str[i];
+
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        // `i` now points to the matching closing brace
+        return str.slice(start, i + 1);
+      }
+    }
+  }
+
+  // ran out of characters => unbalanced
+  return null;
 }
 
 export const ProceedStatus = {
@@ -165,7 +179,7 @@ export const SessionDataProperty = {
   removeHistory: "removeHistory",
 };
 
-export const callClaudeOnce = async (text, systemPrompt) => {
+export const callClaudeOnce = async (text, systemPrompt, model = null) => {
   const messages = [
     {
       role: "user",
@@ -174,14 +188,14 @@ export const callClaudeOnce = async (text, systemPrompt) => {
   ];
   try {
     const result = await client.messages.create({
-      model: process.env.ANTHROPIC_MEDIUM_MODEL,
+      model: model || process.env.ANTHROPIC_MEDIUM_MODEL,
       temperature: 0.2,
-      max_tokens: 1024,
+      max_tokens: 6557,
       messages: messages,
       // tools: this.tools,
       system: systemPrompt,
     });
-    console.log("result", JSON.stringify(result, null, 2));
+    console.log("Claude response:", model, result);
     const ans = result?.content[0].text || "";
     if (hasCurlyBracesWithText(ans)) {
       const cap = JSON.parse(extractTextWithinCurlyBraces(ans));
@@ -196,7 +210,12 @@ export const callClaudeOnce = async (text, systemPrompt) => {
 
 export const intentFinder = async (intents, text) => {
   let joinedIntents = intents
-    ?.map((intent, idx) => `${idx}. ${intent.intent}`)
+    ?.map((intent, idx) => {
+      const intentDescription = intent.description
+        ? ` - ${intent.description}`
+        : "";
+      return `${idx}. ${intent.intent}${intentDescription}`;
+    })
     .join("\n");
   const template = `You are a world class assistant for finding the intent of the user query. You have to find the intent of the user query from the below intents.
   Intents:-
@@ -212,8 +231,6 @@ export const intentFinder = async (intents, text) => {
     template,
     "You are a world class assistant for finding the intent of the user query."
   );
-
-  console.log("intentFinder data", data);
 
   if (data.intent === -1) {
     return null;
@@ -233,5 +250,15 @@ export const getAIText = (message) => {
   // aiText = aiText.replace(/\b\d{3,}\b/g, (match) =>
   //   match.split("").join(" "),
   // );
+  return aiText;
+};
+
+export const getCleanAIText = (message) => {
+  if (!message) {
+    throw new Error("No message found");
+  }
+  let aiText = getAIText(message);
+  aiText = cleanText(aiText);
+
   return aiText;
 };

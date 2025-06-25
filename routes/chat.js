@@ -9,7 +9,7 @@ import {
 
 const router = express.Router();
 
-router.post("/chat", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
       text,
@@ -35,12 +35,12 @@ router.post("/chat", async (req, res) => {
 
     if (output.proceed.status === ProceedStatus.TELL_CUSTOMER) {
       return res.json({
-        response: output.proceed.text,
+        text: output.proceed.text,
         sessionId: output.sessionId,
       });
     } else if (output.proceed.status === ProceedStatus.END) {
       return res.json({
-        response: output.proceed.text,
+        text: output.proceed.text,
         sessionId: output.sessionId,
         conversationEnded: true,
       });

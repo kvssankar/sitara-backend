@@ -35,13 +35,31 @@ router.post("/cases", async (req, res) => {
       priority
     );
 
-    setTimeout(() => {
-      supportAgent.processNewTicket(supportCase.caseId);
-    }, 15000);
-
     res.status(201).json(supportCase);
   } catch (error) {
     console.error("Error creating support case:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/cases/process/new", async (req, res) => {
+  try {
+    const { caseId } = req.body;
+
+    if (!caseId) {
+      return res.status(400).json({
+        error: "caseId is required",
+      });
+    }
+
+    const result = await supportAgent.processNewTicket(caseId);
+    res.json({
+      success: true,
+      message: "Ticket processing started",
+      result,
+    });
+  } catch (error) {
+    console.error("Error processing new ticket:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -99,7 +117,14 @@ router.delete("/cases/:caseId", async (req, res) => {
 router.post("/cases/:caseId/messages", async (req, res) => {
   try {
     const { caseId } = req.params;
-    const { senderId, senderType, content, messageType, mediaUrls } = req.body;
+    const {
+      senderId,
+      senderType,
+      content,
+      messageType,
+      mediaUrls,
+      isNewTicket,
+    } = req.body;
 
     if (!senderId || !senderType || !content) {
       return res.status(400).json({
@@ -115,6 +140,8 @@ router.post("/cases/:caseId/messages", async (req, res) => {
       messageType || "text",
       mediaUrls || []
     );
+
+    if (!isNewTicket) supportAgent.chatWithCustomer(caseId);
 
     res.status(201).json(message);
   } catch (error) {

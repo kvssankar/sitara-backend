@@ -4,7 +4,6 @@ export class FastIntentMatcher {
     this.patterns = new Map();
     this.buildPatterns(intents);
   }
-
   buildPatterns(intents) {
     intents.forEach((intent, index) => {
       const patterns = [];
@@ -41,6 +40,21 @@ export class FastIntentMatcher {
             requiredCount: requiredCount,
             score: 0.6,
             type: "most_keywords",
+          });
+        }
+      }
+
+      // Description-based matching (medium priority)
+      if (intent.description) {
+        const descKeywords = this.extractKeywords(intent.description);
+        if (descKeywords.length >= 2) {
+          const descKeywordsPattern = descKeywords
+            .map((k) => `(?=.*\\b${this.escapeRegex(k)}\\b)`)
+            .join("");
+          patterns.push({
+            regex: new RegExp(`^${descKeywordsPattern}.*$`, "i"),
+            score: 0.5,
+            type: "description_keywords",
           });
         }
       }

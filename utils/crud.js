@@ -12,9 +12,11 @@ import { ObjectId } from "mongodb";
 // projectid
 // intentid
 // "rJ2Wnn3sH"
-//  steps
+// steps
 // intent
 // "My internet is not working"
+// description
+// "Help when internet connection is not working"
 
 // alternate_phrases
 // Array (2)
@@ -30,10 +32,12 @@ export const createIntent = async (intent, userid) => {
 
   //validate intent
   if (!intent.intent || !intent.steps) {
-    throw new Error("Project ID is required");
+    throw new Error("Intent and steps are required");
   }
   intent.projectid = userid;
   intent.intentid = nanoid(8);
+  intent.createdAt = new Date();
+  intent.updatedAt = new Date();
 
   const tools = await getAllToolsFromUser(userid);
 
@@ -53,6 +57,26 @@ export const getIntent = async (intentid, userid) => {
       return toolObj;
     });
   }
+
+  return intent;
+};
+
+export const getIntentWithTools = async (intentid, userid) => {
+  const db = await connectToDatabase();
+  const collection = db.collection(intentsCollectionName);
+
+  const tools = await getAllToolsFromUser(userid);
+
+  const intent = await collection.findOne({ intentid });
+
+  if (intent.tools) {
+    intent.tools = intent.tools.map((tool) => {
+      const toolObj = tools.find((t) => t.name === tool.value);
+      return toolObj;
+    });
+  }
+
+  // console.log("Intent found:", JSON.stringify(intent, null, 2));
 
   return intent;
 };
@@ -88,6 +112,8 @@ export const updateIntent = async (intentid, updatedIntent, userid) => {
   if (!updatedIntent.intent || !updatedIntent.steps) {
     throw new Error("Intent and steps are required");
   }
+
+  updatedIntent.updatedAt = new Date();
 
   await collection.updateOne({ intentid }, { $set: updatedIntent });
 };

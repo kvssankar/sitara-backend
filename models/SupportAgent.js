@@ -11,8 +11,9 @@ import {
   executePythonScript,
   generateTools,
   callClaudeOnce,
+  getCleanAIText,
 } from "../utils/index.js";
-import { getIntent, getIntents } from "../utils/crud.js";
+import { getIntent, getIntents, getIntentWithTools } from "../utils/crud.js";
 import {
   addMessageToCase,
   getCaseMessages,
@@ -91,7 +92,7 @@ class SupportAgent {
       text: issue,
     });
 
-    const intents = await getIntents();
+    const intents = await getIntents("684d43c3234f6819aae4d80e");
     const intentFound = await intentFinder(intents, issue);
 
     if (!intentFound) {
@@ -104,29 +105,17 @@ class SupportAgent {
       return;
     }
 
-    const systemPrompt = `You are a support agent AI. Your task is to assist customers with their issues based on the provided information. Follow the below Steps and execute necessary tools and resolve the issue:
-Steps:
-${intentFound.steps}
+    await updateSupportCase(caseId, {
+      intentId: intentFound.intentid,
+    });
 
-Rules:
-1. Always ask for more details if the issue is not clear.
-2. Use the provided media files to understand the issue better.
-3. If you need to execute a tool, do so and provide the results.
-4. At the end, if issue is resolved summarize the resolution to the customer else ask for more details.
-5. Always respond in a professional and helpful manner.
-`;
-    const requestBody = {
-      model: process.env.ANTHROPIC_MEDIUM_MODEL,
-      system: systemPrompt,
-      max_tokens: 8192,
-      temperature: 0,
-      messages: [{ role: "user", content }],
-    };
+    console.log(`Found intent: ${JSON.stringify(intentFound)}`);
 
-    const response = await anthropic.messages.create(requestBody);
-    const message = getAIText(response);
-
-    await addMessageToCase(caseId, "support-agent-ai", "ai", message);
+    await this.callClaude(
+      [{ role: "user", content }],
+      intentFound.intentid,
+      caseId
+    );
   }
 
   async chatWithCustomer(caseId) {
@@ -139,12 +128,12 @@ Rules:
 
     const aiMessages = supportMessages.filter((msg) => msg.senderType === "ai");
 
-    if (aiMessages.length > 4) {
-      updateSupportCase(caseId, {
-        assignedAgent: "agent123",
-      });
-      return;
-    }
+    // if (aiMessages.length > 4) {
+    //   updateSupportCase(caseId, {
+    //     assignedAgent: "agent123",
+    //   });
+    //   return;
+    // }
 
     const claudeMessages = supportMessages
       .map((msg) => {
@@ -163,13 +152,15 @@ Rules:
       })
       .filter(Boolean);
 
-    const message = await this.callClaude(claudeMessages, supportCase.intentId);
-
-    await addMessageToCase(caseId, "support-agent-ai", "ai", message.message);
+    await this.callClaude(claudeMessages, supportCase.intentId, caseId);
   }
 
-  async callClaude(messages, intentId) {
-    const intent = await getIntent(intentId);
+  async callClaude(messages, intentId, caseId) {
+    console.log("Calling Claude with messages:");
+    const intent = await getIntentWithTools(
+      intentId,
+      "684d43c3234f6819aae4d80e"
+    );
     if (!intent) {
       throw new Error(`Intent not found: ${intentId}`);
     }
@@ -182,7 +173,7 @@ Rules:
 1. Always ask for more details if the issue is not clear.
 2. Use the provided media files to understand the issue better.
 3. If you need to execute a tool, do so and provide the results.
-4. At the end, if issue is resolved summarize the resolution to the customer else ask for more details.
+4. At the end, if issue is resolved summarize the resolution to the customer, else ask for just more details (don't explain or summarize anything).
 5. Always respond in a professional and helpful manner.
 `;
 
@@ -197,10 +188,11 @@ Rules:
     }
 
     let conversationMessages = [...messages];
-    let maxIterations = 10;
+    let maxIterations = 20; // Hard limit increased to 20
     let iteration = 0;
 
     while (iteration < maxIterations) {
+      console.log(`Iteration ${iteration + 1}`);
       iteration++;
 
       try {
@@ -225,10 +217,20 @@ Rules:
           content: response.content,
         });
 
+        console.log(`Claude response:`, response.content);
+        await addMessageToCase(
+          caseId,
+          "support-agent-ai",
+          "ai",
+          getCleanAIText(response)
+        );
+
         // Check if response contains tool calls
         const toolUseBlocks = response.content.filter(
           (content) => content.type === "tool_use"
         );
+
+        console.log(`Found ${toolUseBlocks.length} tool calls in response`);
 
         if (toolUseBlocks && toolUseBlocks.length > 0) {
           // Execute all tool calls
@@ -277,90 +279,18 @@ Rules:
           // Continue the loop to get Claude's response to tool results
           continue;
         } else {
-          // Generate summary of what has been done and what else is needed
-          const summary = await this.generateConversationSummary(
-            conversationMessages
-          );
-
-          return {
-            message: `${
-              summary.summary
-            }\n Please take necessary actions:\n ${summary.nextSteps.join(
-              "\n"
-            )}`,
-          };
+          // No tool calls - Claude has finished processing
+          // Exit the loop and return the final response
+          console.log("No tool calls found, conversation complete");
+          break;
         }
       } catch (error) {
         console.error(`Claude API call failed:`, error);
         throw error;
       }
     }
-
-    // If we reach here, we hit max iterations - still generate summary
-    const summary = await this.generateConversationSummary(
-      conversationMessages
-    );
-    return {
-      message: `${
-        summary.summary
-      }\n Please take necessary actions. ${summary.nextSteps.join(", ")}`,
-    };
   }
 
-  async generateConversationSummary(conversationMessages) {
-    try {
-      // Extract conversation history for summary
-      const conversationHistory = conversationMessages
-        .map((msg, index) => {
-          if (msg.role === "user") {
-            const textContent = msg.content
-              .filter((c) => c.type === "text")
-              .map((c) => c.text)
-              .join(" ");
-            return `User: ${textContent}`;
-          } else if (msg.role === "assistant") {
-            const textContent = msg.content
-              .filter((c) => c.type === "text")
-              .map((c) => c.text)
-              .join(" ");
-            return `Assistant: ${textContent}`;
-          }
-          return null;
-        })
-        .filter(Boolean)
-        .join("\n");
-
-      const summaryPrompt = `Based on the following conversation between a support agent and a customer, provide a comprehensive summary.
-
-Conversation:
-${conversationHistory}
-
-Please analyze the conversation and provide a JSON response with the following structure:
-{
-  "summary": "Brief summary of what has been discussed and accomplished",
-  "actionsCompleted": ["List of specific actions or steps that were completed"],
-  "issueResolved": true/false,
-  "nextSteps": ["List of any remaining actions needed or recommendations"],
-  "customerSatisfaction": "high/medium/low - based on conversation tone",
-  "requiresHumanAgent": true/false
-}`;
-
-      const systemPrompt = `You are an expert customer support analyst. Your task is to analyze support conversations and provide detailed summaries that help track progress and determine next steps.`;
-
-      const summary = await callClaudeOnce(summaryPrompt, systemPrompt);
-      return summary;
-    } catch (error) {
-      console.error("Error generating conversation summary:", error);
-      return {
-        summary: "Unable to generate summary due to an error",
-        actionsCompleted: [],
-        issueResolved: false,
-        nextSteps: ["Review conversation manually"],
-        customerSatisfaction: "medium",
-        requiresHumanAgent: false,
-      };
-    }
-  }
   async generateCaseSummary(caseId) {
     try {
       const supportCase = await getSupportCase(caseId);
@@ -454,7 +384,11 @@ Focus on:
 
 Always provide your response in valid JSON format.`;
 
-      const summary = await callClaudeOnce(summaryPrompt, systemPrompt);
+      const summary = await callClaudeOnce(
+        summaryPrompt,
+        systemPrompt,
+        process.env.ANTHROPIC_HIGH_MODEL
+      );
 
       // Store the summary in the support case
       await updateSupportCase(caseId, {
