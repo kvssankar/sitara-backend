@@ -6,43 +6,6 @@ import {
 import { nanoid } from "nanoid";
 import { DOCS_BUCKET_NAME } from "./rag.js";
 import { ObjectId } from "mongodb";
-import { createDocuments, searchDocumentsDirectly } from "./intent-rag.js";
-
-createDocuments("example intent", process.env.OPENSEARCH_INDEX, {
-  id: "user123",
-})
-  .then((response) => {
-    console.log("Intent stored:", response);
-    searchDocumentsDirectly("example intent")
-      .then((intent) => {
-        console.log("Intent found:", intent);
-      })
-      .catch((error) => {
-        console.error("Error finding intent:", error);
-      });
-  })
-  .catch((error) => {
-    console.error("Error storing intent:", error);
-  });
-
-//intent schema
-
-// projectid
-// intentid
-// "rJ2Wnn3sH"
-// steps
-// intent
-// "My internet is not working"
-// description
-// "Help when internet connection is not working"
-
-// alternate_phrases
-// Array (2)
-
-// createdAt
-// 2024-07-06T17:10:33.396+00:00
-// updatedAt
-// 2024-07-07T19:16:54.440+00:00
 
 export const createIntent = async (intent, userid) => {
   const db = await connectToDatabase();
