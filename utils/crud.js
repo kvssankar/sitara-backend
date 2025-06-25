@@ -6,6 +6,47 @@ import {
 import { nanoid } from "nanoid";
 import { DOCS_BUCKET_NAME } from "./rag.js";
 import { ObjectId } from "mongodb";
+import {
+  createDocuments,
+  searchDocumentsDirectly,
+  deleteDocuments,
+} from "./intent-rag.js";
+
+// createDocuments("example intent", process.env.OPENSEARCH_INDEX, {
+//   id: "user123",
+// })
+//   .then((response) => {
+//     console.log("Intent stored:", response);
+//     searchDocumentsDirectly("example intent")
+//       .then((intent) => {
+//         console.log("Intent found:", intent);
+//       })
+//       .catch((error) => {
+//         console.error("Error finding intent:", error);
+//       });
+//   })
+//   .catch((error) => {
+//     console.error("Error storing intent:", error);
+//   });
+
+//intent schema
+
+// projectid
+// intentid
+// "rJ2Wnn3sH"
+// steps
+// intent
+// "My internet is not working"
+// description
+// "Help when internet connection is not working"
+
+// alternate_phrases
+// Array (2)
+
+// createdAt
+// 2024-07-06T17:10:33.396+00:00
+// updatedAt
+// 2024-07-07T19:16:54.440+00:00
 
 export const createIntent = async (intent, userid) => {
   const db = await connectToDatabase();
@@ -23,6 +64,26 @@ export const createIntent = async (intent, userid) => {
   const tools = await getAllToolsFromUser(userid);
 
   await collection.insertOne(intent);
+
+  // Add intent to OpenSearch for vector search
+  try {
+    const intentText = `${intent.intent} ${intent.description || ""} ${
+      intent.alternate_phrases ? intent.alternate_phrases.join(" ") : ""
+    }`.trim();
+
+    await createDocuments(intentText, process.env.OPENSEARCH_INDEX, {
+      id: intent.intentid,
+      type: "intent",
+      userid: userid,
+    });
+    console.log(`Intent ${intent.intentid} added to OpenSearch successfully`);
+  } catch (error) {
+    console.error(
+      `Error adding intent ${intent.intentid} to OpenSearch:`,
+      error
+    );
+    // Don't throw error here to avoid breaking the main flow
+  }
 };
 
 export const getIntent = async (intentid, userid) => {
@@ -97,6 +158,31 @@ export const updateIntent = async (intentid, updatedIntent, userid) => {
   updatedIntent.updatedAt = new Date();
 
   await collection.updateOne({ intentid }, { $set: updatedIntent });
+
+  // Update intent in OpenSearch
+  try {
+    // First delete the existing document
+    await deleteDocuments(intentid);
+
+    // Then add the updated intent
+    const intentText = `${updatedIntent.intent} ${
+      updatedIntent.description || ""
+    } ${
+      updatedIntent.alternate_phrases
+        ? updatedIntent.alternate_phrases.join(" ")
+        : ""
+    }`.trim();
+
+    await createDocuments(intentText, process.env.OPENSEARCH_INDEX, {
+      id: intentid,
+      type: "intent",
+      userid: userid,
+    });
+    console.log(`Intent ${intentid} updated in OpenSearch successfully`);
+  } catch (error) {
+    console.error(`Error updating intent ${intentid} in OpenSearch:`, error);
+    // Don't throw error here to avoid breaking the main flow
+  }
 };
 
 export const deleteIntent = async (intentid) => {
@@ -108,6 +194,15 @@ export const deleteIntent = async (intentid) => {
 
   if (result.deletedCount === 0) {
     throw new Error(`No document found with the given intentid: ${intentid}`);
+  }
+
+  // Delete intent from OpenSearch
+  try {
+    await deleteDocuments(intentid);
+    console.log(`Intent ${intentid} deleted from OpenSearch successfully`);
+  } catch (error) {
+    console.error(`Error deleting intent ${intentid} from OpenSearch:`, error);
+    // Don't throw error here to avoid breaking the main flow
   }
 
   return result;
