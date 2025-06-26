@@ -13,12 +13,20 @@ import {
   callClaudeOnce,
   getCleanAIText,
 } from "../utils/index.js";
+import {
+  supportAgentSystemPrompt,
+  caseSummaryPrompt,
+  caseSummaryAnalysisSystemPrompt,
+  noDetailsFoundPrompt,
+  imageAnalysisPrompt,
+} from "../utils/prompt.js";
 import { getIntent, getIntents, getIntentWithTools } from "../utils/crud.js";
 import {
   addMessageToCase,
   getCaseMessages,
   getSupportCase,
   updateSupportCase,
+  updateMessage,
 } from "../utils/supportCrud.js";
 
 const s3Client = new S3Client({
@@ -32,92 +40,12 @@ const anthropic = new Anthropic({
 const SUPPORT_BUCKET_NAME = process.env.SUPPORT_BUCKET_NAME;
 
 class SupportAgent {
-  async processNewTicket(caseId) {
-    const supportCase = await getSupportCase(caseId);
-
-    if (!supportCase) {
-      throw new Error(`Support case not found: ${caseId}`);
-    }
-
-    const supportMessages = await getCaseMessages(caseId);
-
-    //get count of number of ai messages
-    const aiMessages = supportMessages.filter((msg) => msg.senderType === "ai");
-
-    if (aiMessages.length > 4) {
-      updateSupportCase(caseId, {
-        assignedAgent: "agent123",
-      });
-      return;
-    }
-
-    const title = supportCase.title;
-    const description =
-      supportCase.description +
-      supportMessages.map((msg) => msg.content).join("\n");
-    const media = supportMessages[0].mediaUrls || [];
-
-    const issue = `Title: ${title}\nDescription: ${description}`;
-    //media is just s3 urls
-    //i need to get base64 image content from s3 url
-    const images = await Promise.all(
-      media.map(async (url) => {
-        const fileKey = url.split("/").pop();
-        const command = new GetObjectCommand({
-          Bucket: SUPPORT_BUCKET_NAME,
-          Key: fileKey,
-        });
-        const response = await s3Client.send(command);
-        const buffer = await response.Body.transformToByteArray();
-        return {
-          type: fileKey.split(".").pop(),
-          content: `data:image/${fileKey
-            .split(".")
-            .pop()};base64,${buffer.toString("base64")}`,
-        };
-      })
-    );
-
-    const content = images.map((img) => ({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: "image/" + img.type,
-        data: img.content.split(";base64,").pop(),
-      },
-    }));
-
-    content.push({
-      type: "text",
-      text: issue,
-    });
-
-    const intents = await getIntents("684d43c3234f6819aae4d80e");
-    const intentFound = await intentFinder(intents, issue);
-
-    if (!intentFound) {
-      await addMessageToCase(
-        caseId,
-        "support-agent-ai",
-        "ai",
-        "Can you please provide more details about your issue?"
-      );
-      return;
-    }
-
+  async processNewTicket(caseId, intentId) {
     await updateSupportCase(caseId, {
-      intentId: intentFound.intentid,
+      intentId,
     });
-
-    console.log(`Found intent: ${JSON.stringify(intentFound)}`);
-
-    await this.callClaude(
-      [{ role: "user", content }],
-      intentFound.intentid,
-      caseId
-    );
+    await this.chatWithCustomer(caseId);
   }
-
   async chatWithCustomer(caseId) {
     const supportCase = await getSupportCase(caseId);
     if (!supportCase) {
@@ -135,12 +63,34 @@ class SupportAgent {
     //   return;
     // }
 
-    const claudeMessages = supportMessages
+    // Process any unprocessed images first
+    await Promise.all(
+      supportMessages.map(async (msg) => {
+        if (
+          msg.senderType === "customer" &&
+          msg.mediaUrls &&
+          msg.mediaUrls.length > 0 &&
+          !msg.processedImages
+        ) {
+          await this.processMessageImages(
+            caseId,
+            msg.messageId,
+            msg.mediaUrls,
+            msg.content
+          );
+        }
+      })
+    );
+
+    // Fetch updated messages after processing
+    const updatedMessages = await getCaseMessages(caseId);
+
+    const claudeMessages = updatedMessages
       .map((msg) => {
         if (msg.senderType === "customer") {
           return {
             role: "user",
-            content: msg.content,
+            content: msg.content, // Now contains text + image descriptions
           };
         } else if (msg.senderType === "ai") {
           return {
@@ -164,18 +114,7 @@ class SupportAgent {
     if (!intent) {
       throw new Error(`Intent not found: ${intentId}`);
     }
-
-    const systemPrompt = `You are a support agent AI. Your task is to assist customers with their issues based on the provided information. Follow the below Steps and execute necessary tools and resolve the issue:
-Steps:
-${intent.steps}
-
-Rules:
-1. Always ask for more details if the issue is not clear.
-2. Use the provided media files to understand the issue better.
-3. If you need to execute a tool, do so and provide the results.
-4. At the end, if issue is resolved summarize the resolution to the customer, else ask for just more details (don't explain or summarize anything).
-5. Always respond in a professional and helpful manner.
-`;
+    const systemPrompt = supportAgentSystemPrompt(intent.steps);
 
     let tools = null;
     let functions = null;
@@ -327,65 +266,15 @@ Rules:
           return `[${timestamp}] ${participantLabel}: ${msg.content}`;
         })
         .join("\n\n");
+      const summaryPromptText = caseSummaryPrompt(
+        caseId,
+        supportCase,
+        conversationHistory
+      );
 
-      const summaryPrompt = `Please analyze the following support case conversation and provide a comprehensive summary.
-
-**Case Information:**
-- Case ID: ${caseId}
-- Title: ${supportCase.title}
-- Description: ${supportCase.description}
-- Status: ${supportCase.status}
-- Priority: ${supportCase.priority}
-- Created: ${new Date(supportCase.createdAt).toLocaleString()}
-
-**Full Conversation:**
-${conversationHistory}
-
-Please provide a detailed analysis and summary in the following JSON format:
-{
-  "caseSummary": "A comprehensive summary of the entire case including the initial issue, all interactions, and current state",
-  "customerIssue": "Clear description of the customer's original problem or request",
-  "keyInteractions": ["List of the most important interactions or turning points in the conversation"],
-  "aiAgentPerformance": {
-    "effectiveness": "high/medium/low",
-    "helpfulResponses": number,
-    "issuesResolved": ["List of issues the AI successfully addressed"],
-    "limitations": ["Areas where AI struggled or needed human intervention"]
-  },
-  "humanAgentInvolvement": {
-    "required": true/false,
-    "reasonForEscalation": "Why human agent involvement was needed (if applicable)",
-    "effectivenessOfIntervention": "How well the human agent addressed the issue"
-  },
-  "resolutionStatus": {
-    "isResolved": true/false,
-    "resolutionMethod": "How the issue was resolved (AI, human agent, or combined effort)",
-    "customerSatisfactionLevel": "high/medium/low",
-    "pendingActions": ["Any remaining tasks or follow-ups needed"]
-  },
-  "insights": {
-    "customerBehavior": "Observations about customer communication style and needs",
-    "commonIssueType": "Category or type of issue this represents",
-    "improvementSuggestions": ["Suggestions for better handling similar cases in future"]
-  },
-  "nextSteps": ["Recommended actions for this specific case"],
-  "tags": ["Relevant tags for categorizing this case"],
-  "timeToResolution": "Estimated or actual time taken to resolve the issue"
-}`;
-
-      const systemPrompt = `You are an expert customer support analyst with deep experience in analyzing support conversations and providing actionable insights. Your task is to thoroughly analyze support case conversations and provide comprehensive summaries that help improve customer service operations.
-
-Focus on:
-- Identifying the core customer issue and how it evolved
-- Evaluating the effectiveness of both AI and human support interventions
-- Assessing customer satisfaction based on conversation tone and outcomes
-- Providing actionable insights for process improvement
-- Clearly distinguishing between different types of participants (customer, AI agent, human agent)
-
-Always provide your response in valid JSON format.`;
-
+      const systemPrompt = caseSummaryAnalysisSystemPrompt;
       const summary = await callClaudeOnce(
-        summaryPrompt,
+        summaryPromptText,
         systemPrompt,
         process.env.ANTHROPIC_HIGH_MODEL
       );
@@ -443,6 +332,119 @@ Always provide your response in valid JSON format.`;
         message: "Failed to get case summary",
       };
     }
+  }
+  async convertImageToText(imageUrl, userText = "") {
+    try {
+      const fileKey = imageUrl.split("/").pop();
+      const command = new GetObjectCommand({
+        Bucket: SUPPORT_BUCKET_NAME,
+        Key: fileKey,
+      });
+      const s3Response = await s3Client.send(command);
+      const buffer = await s3Response.Body.transformToByteArray();
+
+      const imageContent = {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/" + fileKey.split(".").pop(),
+          data: buffer.toString("base64"),
+        },
+      };
+      const prompt = imageAnalysisPrompt(userText);
+
+      const messages = [
+        {
+          role: "user",
+          content: [
+            imageContent,
+            {
+              type: "text",
+              text: prompt,
+            },
+          ],
+        },
+      ];
+
+      const claudeResponse = await anthropic.messages.create({
+        model: process.env.ANTHROPIC_MEDIUM_MODEL,
+        max_tokens: 1000,
+        temperature: 0.2,
+        messages: messages,
+      });
+
+      return getCleanAIText(claudeResponse);
+    } catch (error) {
+      console.error("Error converting image to text:", error);
+      return `[Image: ${imageUrl.split("/").pop()} - Unable to process image: ${
+        error.message
+      }]`;
+    }
+  }
+
+  async processMessageImages(caseId, messageId, mediaUrls, userText) {
+    if (!mediaUrls || mediaUrls.length === 0) {
+      return userText;
+    }
+
+    try {
+      // Convert all images to text descriptions
+      const imageDescriptions = await Promise.all(
+        mediaUrls.map(async (url) => {
+          const description = await this.convertImageToText(url, userText);
+          return `[Image Analysis: ${description}]`;
+        })
+      );
+
+      // Combine user text with image descriptions
+      const enhancedText = userText
+        ? `${userText}\n\n${imageDescriptions.join("\n\n")}`
+        : imageDescriptions.join("\n\n");
+
+      // Update the message to remove mediaUrls and update content
+      await updateMessage(messageId, {
+        content: enhancedText,
+        mediaUrls: [], // Remove media URLs
+        processedImages: true, // Flag to indicate images were processed
+      });
+
+      // Store image information in support case metadata
+      const supportCase = await getSupportCase(caseId);
+      const existingImageData = supportCase.mediaUrls || [];
+
+      await updateSupportCase(caseId, {
+        mediaUrls: [...existingImageData, ...mediaUrls],
+      });
+
+      return enhancedText;
+    } catch (error) {
+      console.error("Error processing message images:", error);
+      return userText + "\n[Error: Could not process attached images]";
+    }
+  }
+
+  async addCustomerMessage(caseId, senderId, content, mediaUrls = []) {
+    // First add the message with original content and mediaUrls
+    const message = await addMessageToCase(
+      caseId,
+      senderId,
+      "customer",
+      content,
+      "text",
+      mediaUrls
+    );
+
+    // If there are images, process them immediately
+    if (mediaUrls && mediaUrls.length > 0) {
+      await this.processMessageImages(
+        caseId,
+        message.messageId,
+        mediaUrls,
+        content
+      );
+    }
+
+    return message;
   }
 }
 

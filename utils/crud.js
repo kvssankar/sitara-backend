@@ -75,6 +75,7 @@ export const createIntent = async (intent, userid) => {
       id: intent.intentid,
       type: "intent",
       userid: userid,
+      ...intent,
     });
     console.log(`Intent ${intent.intentid} added to OpenSearch successfully`);
   } catch (error) {
@@ -177,6 +178,7 @@ export const updateIntent = async (intentid, updatedIntent, userid) => {
       id: intentid,
       type: "intent",
       userid: userid,
+      ...updatedIntent,
     });
     console.log(`Intent ${intentid} updated in OpenSearch successfully`);
   } catch (error) {

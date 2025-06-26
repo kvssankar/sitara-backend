@@ -10,17 +10,70 @@ import {
   addMessageToCase,
   getCaseMessages,
   addInternalNote,
+  createSupportCaseWithMessage,
 } from "../utils/supportCrud.js";
 import { getPresignedUploadUrl } from "../utils/supportFiles.js";
 import SupportAgent from "../models/SupportAgent.js";
+import { findIntentsByText } from "../utils/intent.js";
 
 const router = express.Router();
 const supportAgent = new SupportAgent();
 
-// Support Case Routes
+// Add this import at the top
+
+// Add this route after the existing routes
+router.post("/search-intents", async (req, res) => {
+  try {
+    const { text, userId } = req.body;
+
+    if (!text) {
+      return res.status(400).json({
+        error: "text is required",
+      });
+    }
+
+    const matchingIntents = await findIntentsByText(text);
+    if (matchingIntents.length === 1) {
+      // If only one intent is found, process it immediately
+      const intent = matchingIntents[0];
+      const supportCase = await createSupportCaseWithMessage(
+        userId,
+        `Support Case for Intent: ${intent.intent}`,
+        text,
+        "medium"
+      );
+
+      // If intentId is provided, add it to the case
+      if (intent.intentid) {
+        supportAgent.processNewTicket(supportCase.caseId, intent.intentid);
+      }
+
+      return res.json({
+        success: true,
+        caseId: supportCase.caseId,
+      });
+    }
+
+    res.json({
+      success: true,
+      intents: matchingIntents || [],
+      query: text,
+    });
+  } catch (error) {
+    console.error("Error searching intents:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      intents: [],
+    });
+  }
+});
+
+// Modify the existing case creation route to handle intentId
+// Update the POST /cases route:
 router.post("/cases", async (req, res) => {
   try {
-    const { customerId, title, description, priority } = req.body;
+    const { customerId, title, description, priority, intentId } = req.body;
 
     if (!customerId || !title) {
       return res.status(400).json({
@@ -28,12 +81,17 @@ router.post("/cases", async (req, res) => {
       });
     }
 
-    const supportCase = await createSupportCase(
+    const supportCase = await createSupportCaseWithMessage(
       customerId,
       title,
       description,
       priority
     );
+
+    // If intentId is provided, add it to the case
+    if (intentId) {
+      supportAgent.processNewTicket(supportCase.caseId, intentId);
+    }
 
     res.status(201).json(supportCase);
   } catch (error) {
@@ -41,7 +99,6 @@ router.post("/cases", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 router.post("/cases/process/new", async (req, res) => {
   try {
     const { caseId } = req.body;

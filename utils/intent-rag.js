@@ -367,7 +367,7 @@ export async function searchDocumentsDirectly(
     const queryEmbedding = await embeddings.embedQuery(queryText);
 
     const searchBody = {
-      size: 5,
+      size: 1,
       query: {
         knn: {
           vector_field: {

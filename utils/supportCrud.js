@@ -291,6 +291,33 @@ export const addIntentToCase = async (caseId, intentId) => {
   );
 };
 
+// Combined function to create support case and add initial message
+export const createSupportCaseWithMessage = async (
+  customerId,
+  title,
+  description,
+  priority = "medium"
+) => {
+  // Create the support case
+  const supportCase = await createSupportCase(
+    customerId,
+    title,
+    description,
+    priority
+  );
+
+  // Add the initial message to the case
+  await addMessageToCase(
+    supportCase.caseId,
+    customerId,
+    "customer",
+    description || "No description provided",
+    "text"
+  );
+
+  return supportCase;
+};
+
 const test = async () => {
   try {
     const caseId = "u63z2l6HqKH9RL1UC0duE";
