@@ -81,8 +81,7 @@ export const findIntentsByText = async (text) => {
   );
 
   console.log("Fallback result:", fallbackResult);
-
-  //get intents in fallbackResult intents with intents
+  //get intents in fallbackResult intents with confidence score greater than 50
   const topIntents = fallbackResult.topIntents
     .map((intent) => {
       const matchedIntent = intents.find((i) => i.intentid === intent.intentid);
@@ -96,6 +95,6 @@ export const findIntentsByText = async (text) => {
         reasoning: intent.reasoning,
       };
     })
-    .filter((intent) => intent !== null);
+    .filter((intent) => intent !== null && intent.confidenceScore > 50);
   return topIntents;
 };
