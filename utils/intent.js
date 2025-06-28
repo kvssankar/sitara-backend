@@ -1,6 +1,7 @@
 import { extractTextWithinCurlyBraces } from "./index.js";
 import { searchDocumentsDirectly } from "./intent-rag.js";
 import { intentAnalysisPrompt, intentFallbackPrompt } from "./prompt.js";
+import { getIntents } from "./crud.js";
 
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -9,14 +10,17 @@ const anthropic = new Anthropic({
 });
 
 export const findIntentsByText = async (text) => {
-  let intents = await searchDocumentsDirectly(text);
+  // Due to costing reasing we have commented this code, but it works fully with aws opensearch serverless
+  // let intents = await searchDocumentsDirectly(text);
+
+  let intents = await getIntents("684d43c3234f6819aae4d80e");
   if (!intents || intents.length === 0) {
     return [];
   }
 
   console.log("Found intents:", intents);
 
-  intents = intents.map((intent) => intent._source.metadata);
+  // intents = intents.map((intent) => intent._source.metadata);
 
   console.log(intents);
 

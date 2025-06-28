@@ -101,7 +101,7 @@ router.post("/cases", async (req, res) => {
 });
 router.post("/cases/process/new", async (req, res) => {
   try {
-    const { caseId } = req.body;
+    const { caseId, intentId } = req.body;
 
     if (!caseId) {
       return res.status(400).json({
@@ -109,7 +109,7 @@ router.post("/cases/process/new", async (req, res) => {
       });
     }
 
-    const result = await supportAgent.processNewTicket(caseId);
+    const result = await supportAgent.processNewTicket(caseId, intentId);
     res.json({
       success: true,
       message: "Ticket processing started",
