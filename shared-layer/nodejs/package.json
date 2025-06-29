@@ -1,0 +1,21 @@
+{
+  "name": "nodejs",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.55.0",
+    "@aws-sdk/client-dynamodb": "^3.839.0",
+    "@aws-sdk/client-lambda": "^3.839.0",
+    "@aws-sdk/lib-dynamodb": "^3.839.0",
+    "mongodb": "^6.17.0",
+    "nanoid": "^5.1.5"
+  }
+}
