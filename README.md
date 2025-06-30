@@ -23,3 +23,5 @@ At the end of each resolution, the system generates detailed case summaries incl
 Build and deploy custom Python scripts as tools that can be executed within conversation flows. These tools handle specific business logic, API integrations, database queries, or any automated actions needed to resolve customer issues effectively.
 
 ### [Click to understand how AWS Lambda is the ❤️ of the solution](ARCHITECTURE.md)
+
+[Want to try it yourself?](TRYIT.md)
