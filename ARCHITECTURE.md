@@ -4,7 +4,7 @@
 ![alt text](docs/architecture.png)
 
 ## Heart of Sitaara: Serverless Lambda Functions
-Lambda functions serve as the core orchestration layer that handles all business logic, from intent recognition and case management to AI processing and tool execution, making the entire system event-driven and serverless.
+Lambda functions serve as the core orchestration layer that handles all business logic, from crud operations to intent recognition, AI processing and tool execution, making the entire system event-driven and serverless.
 
 ### Lambda Functions Breakdown
 1. **User CRUD (Support cases) Lambda:** Handles CRUD operations for support cases and customer data stored in DynamoDB
