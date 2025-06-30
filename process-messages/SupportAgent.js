@@ -19,6 +19,7 @@ import {
   updateSupportCase,
   updateMessage,
 } from "/opt/nodejs/sitara/supportCrud.js";
+import { getIntentWithTools } from "/opt/nodejs/sitara/intentCrud.js";
 
 const s3Client = new S3Client({
   region: process.env.REGION || "us-east-1",
@@ -98,15 +99,7 @@ class SupportAgent {
 
   async callClaude(messages, intentId, caseId) {
     console.log("Calling Claude with messages:");
-    const intent = await invokeLambda(
-      process.env.INTENT_LAMBDA_NAME,
-      "intentWithTools",
-      {
-        path: `/intent-with-tools/${intentId}`,
-        httpMethod: "GET",
-        pathParameters: { intentId },
-      }
-    );
+    const intent = await getIntentWithTools(intentId, process.env.PROJECT_ID);
     if (!intent) {
       throw new Error(`Intent not found: ${intentId}`);
     }

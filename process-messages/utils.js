@@ -4,7 +4,7 @@ import {
   intentAnalysisPrompt,
   intentFallbackPrompt,
 } from "/opt/nodejs/sitara/prompt.js";
-import { getIntents } from "/opt/nodejs/sitara/crud.js";
+import { getIntents } from "/opt/nodejs/sitara/intentCrud.js";
 import { ragClient } from "/opt/nodejs/sitara/rag.js";
 
 import Anthropic from "@anthropic-ai/sdk";

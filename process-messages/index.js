@@ -1,9 +1,3 @@
-import {
-  SQSClient,
-  ReceiveMessageCommand,
-  DeleteMessageCommand,
-  DeleteMessageBatchCommand,
-} from "@aws-sdk/client-sqs";
 import SupportAgent from "./SupportAgent.js";
 import {
   addMessageToCase,
@@ -13,217 +7,147 @@ import {
 } from "/opt/nodejs/sitara/supportCrud.js";
 import { findIntentsByText } from "./utils.js";
 
-const sqsClient = new SQSClient({
-  region: process.env.REGION || "us-east-1",
-});
+
 const supportAgent = new SupportAgent();
 
-const QUEUE_URL = process.env.QUEUE_URL;
-const MAX_MESSAGES = process.env.MAX_MESSAGES;
-
-const receiveMessages = async () => {
-  try {
-    const command = new ReceiveMessageCommand({
-      QueueUrl: QUEUE_URL,
-      MaxNumberOfMessages: MAX_MESSAGES,
-      WaitTimeSeconds: 0, // Short polling for Lambda
-      VisibilityTimeoutSeconds: 300, // 5 minutes to process
-      MessageAttributeNames: ["All"],
-      AttributeNames: ["All"],
-    });
-
-    const response = await sqsClient.send(command);
-    return response.Messages || [];
-  } catch (error) {
-    console.error("Error receiving messages from SQS:", error);
-    throw error;
-  }
-};
 
 const isValidMessage = (messageBody) => {
-  return (
-    messageBody &&
-    typeof messageBody.caseId === "string" &&
-    typeof messageBody.text === "string" &&
-    messageBody.text.trim().length > 0 &&
-    typeof messageBody.senderId === "string" &&
-    messageBody.senderId.trim().length > 0 &&
-    (messageBody.mediaUrls === undefined ||
-      Array.isArray(messageBody.mediaUrls))
-  );
+  console.log(`[isValidMessage] Validating message body:`, JSON.stringify(messageBody, null, 2));
+  
+  if (!messageBody) {
+    console.log(`[isValidMessage] Validation failed: messageBody is null/undefined`);
+    return false;
+  }
+  
+  if (typeof messageBody.caseId !== "string") {
+    console.log(`[isValidMessage] Validation failed: caseId is not a string. Type: ${typeof messageBody.caseId}, Value: ${messageBody.caseId}`);
+    return false;
+  }
+  
+  if (typeof messageBody.text !== "string") {
+    console.log(`[isValidMessage] Validation failed: text is not a string. Type: ${typeof messageBody.text}, Value: ${messageBody.text}`);
+    return false;
+  }
+  
+  if (messageBody.text.trim().length === 0) {
+    console.log(`[isValidMessage] Validation failed: text is empty after trimming`);
+    return false;
+  }
+  
+  if (typeof messageBody.senderId !== "string") {
+    console.log(`[isValidMessage] Validation failed: senderId is not a string. Type: ${typeof messageBody.senderId}, Value: ${messageBody.senderId}`);
+    return false;
+  }
+  
+  if (messageBody.senderId.trim().length === 0) {
+    console.log(`[isValidMessage] Validation failed: senderId is empty after trimming`);
+    return false;
+  }
+  
+  if (messageBody.mediaUrls !== undefined && !Array.isArray(messageBody.mediaUrls)) {
+    console.log(`[isValidMessage] Validation failed: mediaUrls is not an array. Type: ${typeof messageBody.mediaUrls}, Value: ${messageBody.mediaUrls}`);
+    return false;
+  }
+  
+  console.log(`[isValidMessage] Validation passed successfully`);
+  return true;
 };
 
-const processMessages = async (messages) => {
-  const results = {
-    successful: [],
-    failed: [],
-    pendingIntents: [],
-  };
-  const messagesToDelete = [];
-
-  for (const message of messages) {
-    try {
-      // Always add message to delete list - we'll delete it regardless of processing outcome
-      messagesToDelete.push(message);
-
-      let messageBody;
-      try {
-        messageBody = JSON.parse(message.Body);
-      } catch (parseError) {
-        console.error("Failed to parse message body:", parseError);
-        results.failed.push({
-          messageId: message.MessageId,
-          error: "Invalid JSON format",
-          rawBody: message.Body,
-        });
-        continue;
-      }
-
-      if (!isValidMessage(messageBody)) {
-        console.error("Invalid message format:", messageBody);
-        results.failed.push({
-          messageId: message.MessageId,
-          error: "Invalid message format",
-          messageBody,
-        });
-        continue;
-      }
-
-      const { caseId, text, mediaUrls, senderId } = messageBody;
-      console.log(
-        `Processing message for caseId: ${caseId}, senderId: ${senderId}`
-      );
-
-      let result;
-
-      const supportCase = await getSupportCase(caseId);
-
-      // Consider a case new if it doesn't have both intentId and pendingIntents
-      const isNewCase =
-        !supportCase || (!supportCase.intentId && !supportCase.pendingIntents);
-
-      if (isNewCase) {
-        result = await processNewTicket(caseId, text, senderId);
-      } else {
-        await addMessageToCase(
-          caseId,
-          senderId,
-          "customer",
-          text,
-          "text",
-          mediaUrls || []
-        );
-        await supportAgent.chatWithCustomer(caseId);
-        result = {
-          statusCode: 200,
-          body: JSON.stringify({
-            message: "Message added to existing support case",
-            caseId,
-            intentId: supportCase.intentId,
-          }),
-        };
-      }
-
-      // Determine result type based on response
-      const parsedResult = JSON.parse(result.body);
-      if (parsedResult.pendingIntents) {
-        results.pendingIntents.push({
-          messageId: message.MessageId,
-          caseId,
-          senderId,
-          pendingIntents: parsedResult.pendingIntents,
-        });
-      } else {
-        results.successful.push({
-          messageId: message.MessageId,
-          caseId,
-          senderId,
-          intentId: parsedResult.intentId,
-          intentName: parsedResult.intentName,
-        });
-      }
-    } catch (error) {
-      console.error(`Error processing message ${message.MessageId}:`, error);
-      results.failed.push({
-        messageId: message.MessageId,
-        error: error.message,
-        stack: error.stack,
-      });
-      // Message is already in messagesToDelete, so it will still be deleted
-    }
-  }
-
-  // Always delete all messages, regardless of processing outcome
-  await deleteProcessedMessages(messagesToDelete);
-
-  return results;
-};
-
-const deleteProcessedMessages = async (messages) => {
-  if (!messages || messages.length === 0) {
-    console.log("No messages to delete");
-    return;
-  }
-
+const processMessage = async (sqsRecord) => {
+  console.log(`[processMessage] Starting to process message: ${sqsRecord.messageId}`);
+  console.log(`[processMessage] Raw SQS record:`, JSON.stringify(sqsRecord, null, 2));
+  
   try {
-    if (messages.length === 1) {
-      // Single message deletion
-      const command = new DeleteMessageCommand({
-        QueueUrl: QUEUE_URL,
-        ReceiptHandle: messages[0].ReceiptHandle,
-      });
-      await sqsClient.send(command);
-      console.log("Successfully deleted 1 message");
-    } else if (messages.length <= 10) {
-      // Batch deletion (up to 10 messages)
-      const entries = messages.map((message, index) => ({
-        Id: index.toString(),
-        ReceiptHandle: message.ReceiptHandle,
-      }));
-
-      const command = new DeleteMessageBatchCommand({
-        QueueUrl: QUEUE_URL,
-        Entries: entries,
-      });
-
-      const response = await sqsClient.send(command);
-      console.log(
-        `Successfully deleted ${response.Successful?.length || 0} messages`
-      );
-
-      if (response.Failed && response.Failed.length > 0) {
-        console.error("Failed to delete some messages:", response.Failed);
-        // Log which specific messages failed to delete
-        response.Failed.forEach((failedMsg) => {
-          console.error(
-            `Failed to delete message ID ${failedMsg.Id}: ${failedMsg.Message}`
-          );
-        });
-      }
-    } else {
-      // Handle more than 10 messages by splitting into batches
-      console.log(`Deleting ${messages.length} messages in batches of 10`);
-      for (let i = 0; i < messages.length; i += 10) {
-        const batch = messages.slice(i, i + 10);
-        await deleteProcessedMessages(batch);
-      }
+    let messageBody;
+    try {
+      console.log(`[processMessage] Parsing message body for messageId: ${sqsRecord.messageId}`);
+      messageBody = JSON.parse(sqsRecord.body);
+      console.log(`[processMessage] Parsed message body:`, JSON.stringify(messageBody, null, 2));
+    } catch (parseError) {
+      console.error(`[processMessage] Failed to parse message body for messageId ${sqsRecord.messageId}:`, parseError);
+      throw new Error("Invalid JSON format");
     }
+
+    console.log(`[processMessage] Validating message format for messageId: ${sqsRecord.messageId}`);
+    if (!isValidMessage(messageBody)) {
+      console.error(`[processMessage] Invalid message format for messageId ${sqsRecord.messageId}:`, JSON.stringify(messageBody, null, 2));
+      console.error(`[processMessage] Validation failed - missing required fields or incorrect types`);
+      throw new Error("Invalid message format");
+    }
+    console.log(`[processMessage] Message validation passed for messageId: ${sqsRecord.messageId}`);
+
+    const { caseId, text, mediaUrls, senderId } = messageBody;
+    console.log(`[processMessage] Extracted data - caseId: ${caseId}, senderId: ${senderId}, text length: ${text?.length}, mediaUrls: ${mediaUrls ? mediaUrls.length : 'none'}`);
+    console.log(`[processMessage] Processing message for caseId: ${caseId}, senderId: ${senderId}`);
+
+    console.log(`[processMessage] Fetching support case for caseId: ${caseId}`);
+    const supportCase = await getSupportCase(caseId);
+    console.log(`[processMessage] Support case fetched:`, supportCase ? JSON.stringify(supportCase, null, 2) : 'null');
+
+    // Consider a case new if it doesn't have both intentId and pendingIntents
+    const isNewCase =
+      !supportCase || (!supportCase.intentId && !supportCase.pendingIntents);
+    console.log(`[processMessage] Case classification - isNewCase: ${isNewCase}, hasIntentId: ${!!supportCase?.intentId}, hasPendingIntents: ${!!supportCase?.pendingIntents}`);
+
+    let result;
+    if (isNewCase) {
+      console.log(`[processMessage] Processing as new ticket for caseId: ${caseId}`);
+      result = await processNewTicket(caseId, text, senderId);
+      console.log(`[processMessage] New ticket processing result:`, JSON.stringify(result, null, 2));
+    } else {
+      console.log(`[processMessage] Processing as existing case for caseId: ${caseId}`);
+      //already added by frontend
+      // await addMessageToCase(
+      //   caseId,
+      //   senderId,
+      //   "customer",
+      //   text,
+      //   "text",
+      //   mediaUrls || []
+      // );
+      console.log(`[processMessage] Calling supportAgent.chatWithCustomer for caseId: ${caseId}`);
+      await supportAgent.chatWithCustomer(caseId);
+      console.log(`[processMessage] supportAgent.chatWithCustomer completed for caseId: ${caseId}`);
+      result = {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: "Message added to existing support case",
+          caseId,
+          intentId: supportCase.intentId,
+        }),
+      };
+      console.log(`[processMessage] Existing case processing result:`, JSON.stringify(result, null, 2));
+    }
+
+    console.log(`[processMessage] Message processing completed successfully for messageId: ${sqsRecord.messageId}`);
+    return {
+      messageId: sqsRecord.messageId,
+      status: 'success',
+      result: JSON.parse(result.body)
+    };
+
   } catch (error) {
-    console.error("Error deleting messages:", error);
-    // Log details about which messages we failed to delete
-    console.error(
-      "Failed to delete messages with IDs:",
-      messages.map((m) => m.MessageId)
-    );
-    // Don't throw here - we don't want to fail the entire batch for deletion issues
+    console.error(`[processMessage] Error processing message ${sqsRecord.messageId}:`, error);
+    console.error(`[processMessage] Error stack for ${sqsRecord.messageId}:`, error.stack);
+    return {
+      messageId: sqsRecord.messageId,
+      status: 'failed',
+      error: error.message,
+      stack: error.stack
+    };
   }
 };
 
 const processNewTicket = async (caseId, text, senderId) => {
+  console.log(`[processNewTicket] Starting processing for caseId: ${caseId}, senderId: ${senderId}, text length: ${text?.length}`);
+  
+  console.log(`[processNewTicket] Fetching existing support case for caseId: ${caseId}`);
   let supportCase = await getSupportCase(caseId);
+  console.log(`[processNewTicket] Existing support case:`, supportCase ? JSON.stringify(supportCase, null, 2) : 'null');
 
   // If case exists but already has intentId or pendingIntents, return existing info
   if (supportCase && (supportCase.intentId || supportCase.pendingIntents)) {
+    console.log(`[processNewTicket] Case ${caseId} already has intent information - intentId: ${supportCase.intentId}, pendingIntents: ${!!supportCase.pendingIntents}`);
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -235,28 +159,40 @@ const processNewTicket = async (caseId, text, senderId) => {
     };
   }
 
-  const matchingIntents = await findIntentsByText(text);
+  console.log(`[processNewTicket] Finding intents for text: "${text}"`);
+  let matchingIntents = await findIntentsByText(text);
+  console.log(`[processNewTicket] Found ${matchingIntents.length} matching intents:`, JSON.stringify(matchingIntents, null, 2));
 
   if (matchingIntents.length === 1) {
+    console.log(`[processNewTicket] Single intent found - processing...`);
     const intent = matchingIntents[0];
+    console.log(`[processNewTicket] Intent details:`, JSON.stringify(intent, null, 2));
 
     // If case doesn't exist, create it; otherwise, we'll update the existing one
     if (!supportCase) {
+      console.log(`[processNewTicket] Creating new support case for caseId: ${caseId}`);
       supportCase = await createSupportCaseWithMessage(
         senderId,
         `Support Case for Intent: ${intent.intent}`,
         text,
         "medium"
       );
+      console.log(`[processNewTicket] New support case created:`, JSON.stringify(supportCase, null, 2));
     } else {
-      // Add message to existing case
-      await addMessageToCase(caseId, senderId, "customer", text, "text", []);
+      console.log(`[processNewTicket] Using existing support case for caseId: ${caseId}`);
+      // //already added by frontend
+      // await addMessageToCase(caseId, senderId, "customer", text, "text", []);
     }
 
     if (intent.intentid) {
+      console.log(`[processNewTicket] Processing new ticket with supportAgent for caseId: ${supportCase.caseId}, intentId: ${intent.intentid}`);
       await supportAgent.processNewTicket(supportCase.caseId, intent.intentid);
+      console.log(`[processNewTicket] supportAgent.processNewTicket completed`);
+    } else {
+      console.log(`[processNewTicket] Warning: Intent found but no intentid present:`, JSON.stringify(intent, null, 2));
     }
 
+    console.log(`[processNewTicket] Single intent processing completed successfully`);
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -270,19 +206,34 @@ const processNewTicket = async (caseId, text, senderId) => {
       }),
     };
   } else {
+    console.log(`[processNewTicket] Multiple or no intents found (${matchingIntents.length} intents) - setting pending intents`);
     // Multiple or no intents found - update case with pending intents
+    console.log(`[processNewTicket] Updating support case ${caseId} with pending intents`);
+    matchingIntents = matchingIntents.map((intent) => ({
+      intendid: intent.intentid,
+      intent: intent.intent,
+      description: intent.description,
+      confidenceScore: intent.confidenceScore || 0,
+      reasoning: intent.reasoning || "",
+    }));
     await updateSupportCase(caseId, {
       pendingIntents: matchingIntents,
     });
+    console.log(`[processNewTicket] Support case updated with pending intents`);
 
     // If case doesn't exist, we might need to create it first
     if (!supportCase) {
+      console.log(`[processNewTicket] Adding message to non-existing case ${caseId}`);
       await addMessageToCase(caseId, senderId, "customer", text, "text", []);
+      console.log(`[processNewTicket] Message added to case ${caseId}`);
     } else {
+      console.log(`[processNewTicket] Adding message to existing case ${caseId}`);
       // Add message to existing case
       await addMessageToCase(caseId, senderId, "customer", text, "text", []);
+      console.log(`[processNewTicket] Message added to existing case ${caseId}`);
     }
 
+    console.log(`[processNewTicket] Pending intents processing completed successfully`);
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -295,49 +246,91 @@ const processNewTicket = async (caseId, text, senderId) => {
 };
 
 export const handler = async (event) => {
-  try {
-    const messages = await receiveMessages();
+  console.log(`[handler] === LAMBDA EXECUTION START ===`);
+  console.log(`[handler] Received batch with ${event.Records.length} messages`);
+  console.log(`[handler] Full event object:`, JSON.stringify(event, null, 2));
+  
+  const results = {
+    successful: [],
+    failed: [],
+    pendingIntents: [],
+  };
 
-    if (!messages || messages.length === 0) {
-      console.log("No messages to process");
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          message: "No messages to process",
-          processedCount: 0,
-        }),
-      };
+  // Process all messages in the batch
+  console.log(`[handler] Starting parallel processing of ${event.Records.length} messages`);
+  const processingPromises = event.Records.map(async (record, index) => {
+    console.log(`[handler] Processing record ${index + 1}/${event.Records.length} with messageId: ${record.messageId}`);
+    const result = await processMessage(record);
+    console.log(`[handler] Completed processing record ${index + 1}/${event.Records.length} with status: ${result.status}`);
+    
+    if (result.status === 'success') {
+      if (result.result.pendingIntents) {
+        console.log(`[handler] Adding to pendingIntents for messageId: ${result.messageId}`);
+        results.pendingIntents.push({
+          messageId: result.messageId,
+          caseId: result.result.caseId,
+          pendingIntents: result.result.pendingIntents,
+        });
+      } else {
+        console.log(`[handler] Adding to successful for messageId: ${result.messageId}`);
+        results.successful.push({
+          messageId: result.messageId,
+          caseId: result.result.caseId,
+          intentId: result.result.intentId,
+          intentName: result.result.intentName,
+        });
+      }
+    } else {
+      console.log(`[handler] Adding to failed for messageId: ${result.messageId}, error: ${result.error}`);
+      results.failed.push(result);
     }
+    
+    return result;
+  });
 
-    console.log(`Processing ${messages.length} messages`);
+  console.log(`[handler] Waiting for all ${processingPromises.length} processing promises to complete`);
+  await Promise.all(processingPromises);
+  console.log(`[handler] All processing promises completed`);
 
-    const results = await processMessages(messages);
+  console.log(`[handler] Processing completed. Successful: ${results.successful.length}, Failed: ${results.failed.length}, Pending: ${results.pendingIntents.length}`);
+  console.log(`[handler] Detailed results:`, JSON.stringify(results, null, 2));
 
-    console.log(
-      `Processing completed. Successful: ${results.successful.length}, Failed: ${results.failed.length}, Pending: ${results.pendingIntents.length}`
-    );
-
+  // If there are any failures, throw an error to trigger partial batch failure
+  if (results.failed.length > 0) {
+    console.error(`[handler] Some messages failed processing:`, JSON.stringify(results.failed, null, 2));
+    
+    // For partial batch failure, you can either:
+    // 1. Throw an error (this will retry ALL messages)
+    // 2. Return the failed message IDs (requires reportBatchItemFailures: true)
+    
+    // Option 2: Return failed message IDs for partial batch failure
+    const batchItemFailures = results.failed.map(failure => ({
+      itemIdentifier: failure.messageId
+    }));
+    console.log(`[handler] Returning batch item failures:`, JSON.stringify(batchItemFailures, null, 2));
+    
     return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: "Messages processed successfully",
-        processedCount: messages.length,
-        results: {
-          successful: results.successful.length,
-          failed: results.failed.length,
-          pendingIntents: results.pendingIntents.length,
-        },
-        details: results,
-      }),
-    };
-  } catch (error) {
-    console.error("Lambda execution error:", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: error.message,
-        message: "Lambda execution failed",
-      }),
+      batchItemFailures: batchItemFailures
     };
   }
+
+  console.log(`[handler] All messages processed successfully`);
+  const finalResult = {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: "Messages processed successfully",
+      processedCount: event.Records.length,
+      results: {
+        successful: results.successful.length,
+        failed: results.failed.length,
+        pendingIntents: results.pendingIntents.length,
+      },
+      details: results,
+    }),
+  };
+  
+  console.log(`[handler] Final result:`, JSON.stringify(finalResult, null, 2));
+  console.log(`[handler] === LAMBDA EXECUTION END ===`);
+  
+  return finalResult;
 };
