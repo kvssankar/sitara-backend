@@ -1,4 +1,7 @@
-import { caseSummaryPrompt } from "/opt/nodejs/sitara/prompt.js";
+import {
+  caseSummaryPrompt,
+  caseSummaryAnalysisSystemPrompt,
+} from "/opt/nodejs/sitara/prompt.js";
 import {
   getSupportCase,
   updateSupportCase,

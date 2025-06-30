@@ -62,39 +62,64 @@ export const updateSupportCase = async (caseId, updates) => {
   const timestamp = new Date().toISOString();
 
   // Build update expression dynamically
-  let updateExpression = "SET updatedAt = :updatedAt";
-  const expressionValues = {
+  const updateExpressionParts = [];
+  const expressionAttributeNames = {};
+  const expressionAttributeValues = {
     ":updatedAt": timestamp,
   };
+
+  // Always update the updatedAt timestamp
+  updateExpressionParts.push("updatedAt = :updatedAt");
 
   // Add other updates
   Object.keys(updates).forEach((key, index) => {
     const valueKey = `:val${index}`;
-    updateExpression += `, ${key} = ${valueKey}`;
-    expressionValues[valueKey] = updates[key];
+
+    if (key === "status") {
+      // Handle reserved keyword 'status'
+      expressionAttributeNames["#status"] = "status";
+      updateExpressionParts.push(`#status = ${valueKey}`);
+    } else {
+      updateExpressionParts.push(`${key} = ${valueKey}`);
+    }
+    expressionAttributeValues[valueKey] = updates[key];
   });
 
   // Handle status-specific timestamps
   if (updates.status === "resolved" && !updates.resolvedAt) {
-    updateExpression += ", resolvedAt = :resolvedAt";
-    expressionValues[":resolvedAt"] = timestamp;
+    updateExpressionParts.push("resolvedAt = :resolvedAt");
+    expressionAttributeValues[":resolvedAt"] = timestamp;
   }
   if (updates.status === "closed" && !updates.closedAt) {
-    updateExpression += ", closedAt = :closedAt";
-    expressionValues[":closedAt"] = timestamp;
+    updateExpressionParts.push("closedAt = :closedAt");
+    expressionAttributeValues[":closedAt"] = timestamp;
   }
 
   // Update GSI keys if status or priority changed
   if (updates.status) {
-    updateExpression += ", gsi2pk = :gsi2pk";
-    expressionValues[":gsi2pk"] = `STATUS#${updates.status}`;
+    updateExpressionParts.push("gsi2pk = :gsi2pk");
+    expressionAttributeValues[":gsi2pk"] = `STATUS#${updates.status}`;
+  }
+
+  const updateExpression = `SET ${updateExpressionParts.join(", ")}`;
+
+  // Prepare parameters for updateItem
+  const updateParams = {
+    updateExpression,
+    expressionAttributeValues,
+  };
+
+  // Only add ExpressionAttributeNames if we have reserved keywords
+  if (Object.keys(expressionAttributeNames).length > 0) {
+    updateParams.expressionAttributeNames = expressionAttributeNames;
   }
 
   const updatedCase = await updateItem(
     TABLES.SUPPORT_CASES,
     { caseId },
-    updateExpression,
-    expressionValues
+    updateParams.updateExpression,
+    updateParams.expressionAttributeValues,
+    updateParams.expressionAttributeNames
   );
 
   return updatedCase;

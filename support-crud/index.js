@@ -128,7 +128,7 @@ const handleUpdateCase = async (event, body) => {
     const caseId = getPathParameter(event, "caseId");
     const supportCase = await updateSupportCase(caseId, body);
     if (body.resolved === true || body.resolved === false) {
-      generateCaseSummary(caseId);
+      await generateCaseSummary(caseId);
     }
     return createResponse(200, supportCase);
   } catch (error) {
