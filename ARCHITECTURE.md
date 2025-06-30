@@ -50,7 +50,7 @@ Throughout the process, all interactions are stored in DynamoDB, and upon comple
 
 ## **Data Flow Process**
 
-1. **User Request** → API Gateway → Appropriate Lambda function
+1. **User Request** → [API Gateway](sitara-apigateway.json) → Appropriate Lambda function
 2. **Message Processing** → SQS → Process Messages Lambda
 3. **Intent Recognition** → Intents RAG Lambda → OpenSearch Vector DB
 4. **AI Processing** → Anthropic LLM via Bedrock
