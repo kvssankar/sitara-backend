@@ -67,4 +67,160 @@ Throughout the process, all interactions are stored in DynamoDB, and upon comple
 
 **Message Queuing**: SQS ensures reliable message processing and system resilience
 
-[Want to try it yourself?](TRYIT.md)
+
+## **Serverless Best Practices Implemented in Sitaara**
+
+
+
+### **1. Single Responsibility Principle**
+
+-   **5 specialized Lambda functions** each handling one specific domain (Admin CRUD, Intents RAG, Support CRUD, Process Messages, Tool Executor)
+-   **Microservices approach** with clear separation of concerns
+-   **Domain-driven design** where each Lambda owns its specific business logic
+
+### **2. Event-Driven Architecture**
+
+-   **Amazon SQS integration** for asynchronous message processing
+-   **Decoupled components** that communicate through events rather than direct calls
+-   **Fault-tolerant design** where failures in one component don't cascade
+
+### **3. Shared Layer Pattern**
+
+-   **Reusable shared layer** (`shared-layer/nodejs/sitara/`) containing common utilities
+-   **DRY principle** implementation across all Lambda functions
+-   **Centralized business logic** for database operations, API helpers, and utilities
+
+## **🔧 Code Organization & Structure**
+
+### **4. Environment Configuration**
+
+-   **Environment variables** for all configuration (API keys, database connections, regions)
+-   **Secure secrets management** using AWS environment variables
+-   **Region-specific configuration** with fallback defaults
+
+### **5. Error Handling & Resilience**
+
+```javascript
+// Comprehensive error handling pattern
+export const handleError = (error, context) => {
+  console.error(`Error ${context}:`, error);
+  return createResponse(500, { error: error.message });
+};
+
+```
+
+### **6. Connection Reuse & Optimization**
+
+-   **Client initialization outside handlers** for connection reuse
+-   **Cached database connections** in MongoDB client
+-   **Singleton pattern** for expensive client instantiations
+
+## **⚡ Performance & Scalability**
+
+### **7. Asynchronous Processing**
+
+-   **SQS queues** for handling message processing at scale
+-   **Batch processing** capabilities for multiple messages
+-   **Non-blocking operations** throughout the codebase
+
+### **8. Efficient Data Access Patterns**
+
+-   **DynamoDB with GSI** for optimized query patterns
+-   **Vector search with OpenSearch** for semantic similarity
+-   **Proper indexing strategy** for different access patterns
+
+### **9. Lambda Cold Start Optimization**
+
+-   **Minimal dependencies** in each function
+-   **Shared layers** to reduce deployment package size
+-   **Connection pooling** and client reuse
+
+## **🛡️ Security & Compliance**
+
+### **10. API Security**
+
+-   **CORS configuration** properly implemented
+-   **Request validation** and input sanitization
+-   **Authorization headers** for user authentication
+
+### **11. Secure Inter-Service Communication**
+
+-   **AWS IAM roles** for Lambda-to-Lambda communication
+-   **Encrypted payloads** for sensitive data transmission
+-   **Secure environment variable usage**
+
+## **📊 Monitoring & Observability**
+
+### **12. Comprehensive Logging**
+
+```javascript
+console.log(`[processNewTicket] Finding intents for text: "${text}"`);
+console.log(`[handler] Received batch with ${event.Records.length} messages`);
+
+```
+
+-   **Structured logging** with context information
+-   **Request tracing** throughout the application flow
+-   **Error logging** with detailed stack traces
+
+### **13. Operational Excellence**
+
+-   **Graceful degradation** when external services fail
+-   **Retry mechanisms** for transient failures
+-   **Circuit breaker patterns** for external API calls
+
+## **💰 Cost Optimization**
+
+### **14. Pay-per-Use Model**
+
+-   **Pure serverless architecture** with no always-on resources
+-   **Auto-scaling** based on actual demand
+-   **Resource right-sizing** for each Lambda function's needs
+
+### **15. Efficient Resource Utilization**
+
+-   **Shared layers** to reduce code duplication and deployment size
+-   **Optimized memory allocation** based on function requirements
+-   **Connection pooling** to minimize initialization overhead
+
+## **🔄 DevOps & Deployment**
+
+### **16. Infrastructure as Code Ready**
+
+-   **Environment-driven configuration** making IaC deployment straightforward
+-   **Stateless functions** that can be deployed anywhere
+-   **Version control friendly** structure
+
+### **17. API Design Best Practices**
+
+-   **RESTful API patterns** with proper HTTP methods
+-   **Consistent response formats** across all endpoints
+-   **Proper status codes** and error responses
+
+## **🎯 Business Logic Patterns**
+
+### **18. Domain-Specific Optimization**
+
+-   **Intent recognition pipeline** optimized for AI workloads
+-   **Tool execution sandbox** for secure code execution
+-   **Case management workflow** designed for support processes
+
+### **19. Data Consistency**
+
+-   **Eventually consistent** design appropriate for support workflows
+-   **Proper data modeling** for NoSQL databases
+-   **Transactional operations** where needed
+
+## **🚀 Scalability Patterns**
+
+### **20. Horizontal Scaling**
+
+-   **Stateless design** enabling unlimited horizontal scaling
+-   **Queue-based processing** that handles traffic spikes
+-   **Database scaling** through proper partitioning strategies
+
+These best practices ensure that Sitaara can scale from handling a few support tickets to thousands per minute while maintaining high performance, security, and cost efficiency - all hallmarks of well-designed serverless architecture.
+
+
+
+
