@@ -27,3 +27,4 @@ Build and deploy custom Python scripts as tools that can be executed within conv
 ### Additional links
 
 [Link to frontend code](https://github.com/kvssankar/sitara-frontend)
+[Live demo site](https://d2v1pfi3qzvh02.cloudfront.net/)
