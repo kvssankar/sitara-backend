@@ -1,0 +1,31 @@
+version = 0.1
+
+[default]
+[default.build]
+[default.build.parameters]
+use_container = true
+
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "sitaara-dev"
+s3_bucket = "sitaara-sam-artifacts-dev"
+s3_prefix = "sitaara"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+parameter_overrides = "Environment=dev ProjectId=PLACEHOLDER_PROJECT_ID"
+image_repositories = []
+
+[dev]
+[dev.deploy.parameters]
+stack_name = "sitaara-dev"
+parameter_overrides = "Environment=dev ProjectId=PLACEHOLDER_PROJECT_ID"
+
+[staging]
+[staging.deploy.parameters]
+stack_name = "sitaara-staging"
+parameter_overrides = "Environment=staging ProjectId=PLACEHOLDER_PROJECT_ID"
+
+[prod]
+[prod.deploy.parameters]
+stack_name = "sitaara-prod"
+parameter_overrides = "Environment=prod ProjectId=PLACEHOLDER_PROJECT_ID"

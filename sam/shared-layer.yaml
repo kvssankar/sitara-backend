@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sitaara Shared Layer'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+Resources:
+  SitaraSharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub 'sitara-shared-layer-${Environment}'
+      ContentUri: ./shared-layer
+      CompatibleRuntimes:
+        - nodejs22.x
+        - python3.11
+      Description: Shared utilities and dependencies for Sitaara platform
+      RetentionPolicy: Delete
+
+Outputs:
+  SharedLayerArn:
+    Description: 'Shared Layer ARN'
+    Value: !Ref SitaraSharedLayer
+    Export:
+      Name: !Sub '${AWS::StackName}-SharedLayer'

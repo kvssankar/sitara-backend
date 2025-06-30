@@ -1,0 +1,31 @@
+# Environment Variables Template for Sitaara
+# Copy this file and replace placeholder values with actual values
+
+common: &common
+  # MongoDB Configuration
+  MONGO_URI: "mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority"
+  MONGO_DB_NAME: "sitaara_db"
+  
+  # OpenSearch Configuration
+  OPENSEARCH_URL: "https://your-opensearch-domain.us-east-1.aoss.amazonaws.com"
+  OPENSEARCH_INDEX: "intents"
+  
+  # S3 Configuration
+  DOCS_BUCKET_NAME: "your-docs-bucket-name"
+  
+  # Anthropic Configuration
+  ANTHROPIC_API_KEY: "sk-ant-api03-your-api-key"
+  ANTHROPIC_MEDIUM_MODEL: "claude-sonnet-4-20250514"
+  ANTHROPIC_HIGH_MODEL: "claude-opus-4-20250514"
+
+dev:
+  <<: *common
+  PROJECT_ID: "dev-project-id"
+
+staging:
+  <<: *common
+  PROJECT_ID: "staging-project-id"
+  
+prod:
+  <<: *common
+  PROJECT_ID: "prod-project-id"

@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Sitaara IAM Roles and Policies'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+  SupportCasesTableArn:
+    Type: String
+    Description: Support Cases Table ARN
+  SupportMessagesTableArn:
+    Type: String
+    Description: Support Messages Table ARN
+  SupportMessagesQueueArn:
+    Type: String
+    Description: Support Messages Queue ARN
+  SupportMessagesDeadLetterQueueArn:
+    Type: String
+    Description: Support Messages Dead Letter Queue ARN
+  SupportFilesBucketArn:
+    Type: String
+    Description: Support Files Bucket ARN
+
+Resources:
+  BuildWithGenAIRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'buildwithgenaai-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SitaaraLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:*
+                  - cloudwatch:GenerateQuery
+                  - cloudwatch:GenerateQueryResultsSummary
+                Resource: '*'
+              
+              # DynamoDB
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: 
+                  - !Ref SupportCasesTableArn
+                  - !Ref SupportMessagesTableArn
+                  - !Sub '${SupportCasesTableArn}/index/*'
+                  - !Sub '${SupportMessagesTableArn}/index/*'
+              
+              # SQS
+              - Effect: Allow
+                Action:
+                  - sqs:*
+                Resource:
+                  - !Ref SupportMessagesQueueArn
+                  - !Ref SupportMessagesDeadLetterQueueArn
+              
+              # Lambda (for invoking other functions)
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:sitara-*'
+              
+              # S3 (for file uploads)
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GeneratePresignedUrl
+                Resource: 
+                  - !Sub '${SupportFilesBucketArn}/*'
+                  - 'arn:aws:s3:::PLACEHOLDER_DOCS_BUCKET_NAME/*'
+              
+              # Bedrock (for AI)
+              - Effect: Allow
+                Action:
+                  - bedrock:*
+                Resource: '*'
+              
+              # OpenSearch Serverless - intents-collection
+              - Effect: Allow
+                Action:
+                  - aoss:APIAccessAll
+                  - aoss:*
+                Resource: !Sub 'arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/intents-collection'
+              
+              # API Gateway
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                  - execute-api:ManageConnections
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*'
+              
+              # Additional services
+              - Effect: Allow
+                Action:
+                  - transcribe:*
+                  - polly:*
+                Resource: '*'
+
+Outputs:
+  BuildWithGenAIRoleArn:
+    Description: 'IAM Role ARN for Lambda functions'
+    Value: !GetAtt BuildWithGenAIRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRole'

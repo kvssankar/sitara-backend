@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sitaara Lambda Functions'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+  ProjectId:
+    Type: String
+    Description: Project ID for MongoDB
+  BuildWithGenAIRoleArn:
+    Type: String
+    Description: IAM Role ARN for Lambda functions
+  SharedLayerArn:
+    Type: String
+    Description: Shared Layer ARN
+  SupportCasesTableName:
+    Type: String
+    Description: Support Cases Table Name
+  SupportMessagesTableName:
+    Type: String
+    Description: Support Messages Table Name
+  SupportMessagesQueueArn:
+    Type: String
+    Description: Support Messages Queue ARN
+  SupportFilesBucketName:
+    Type: String
+    Description: Support Files Bucket Name
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+      - x86_64
+    EphemeralStorage:
+      Size: 512
+    EventInvokeConfig:
+      MaximumEventAgeInSeconds: 21600
+      MaximumRetryAttempts: 2
+    Environment:
+      Variables:
+        REGION: !Ref AWS::Region
+        PROJECT_ID: !Ref ProjectId
+        SUPPORT_CASES_TABLE: !Ref SupportCasesTableName
+        SUPPORT_MESSAGES_TABLE: !Ref SupportMessagesTableName
+
+Resources:
+  # ========================================
+  # 1. ADMIN CRUD (INTENTS AND TOOLS)
+  # ========================================
+  SitaraIntentsToolsCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sitara-intents-tools-crud-${Environment}'
+      CodeUri: ./lambdas/intents-tools-crud
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !Ref BuildWithGenAIRoleArn
+      Layers:
+        - !Ref SharedLayerArn
+      Environment:
+        Variables:
+          DOCS_BUCKET_NAME: PLACEHOLDER_DOCS_BUCKET_NAME
+          MONGO_DB_NAME: PLACEHOLDER_MONGO_DB_NAME
+          MONGO_URI: PLACEHOLDER_MONGO_URI
+          OPENSEARCH_INDEX: intents
+          RAG_LAMBDA_FUNCTION_NAME: !Sub 'sitara-intents-rag-${Environment}'
+          OPENSEARCH_URL: PLACEHOLDER_OPENSEARCH_URL
+      Tags:
+        Project: sitaara
+        Environment: !Ref Environment
+
+  # ========================================
+  # 2. INTENTS RAG
+  # ========================================
+  SitaraIntentsRagFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sitara-intents-rag-${Environment}'
+      CodeUri: ./lambdas/intents-rag
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !Ref BuildWithGenAIRoleArn
+      Layers:
+        - !Ref SharedLayerArn
+      Environment:
+        Variables:
+          OPENSEARCH_INDEX: intents
+          OPENSEARCH_URL: PLACEHOLDER_OPENSEARCH_URL
+      Tags:
+        Project: sitaara
+        Environment: !Ref Environment
+
+  # ========================================
+  # 3. SUPPORT CRUD
+  # ========================================
+  SitaraSupportCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sitara-support-crud-${Environment}'
+      CodeUri: ./lambdas/support-crud
+      Handler: index.handler
+      MemorySize: 512
+      Timeout: 120
+      Role: !Ref BuildWithGenAIRoleArn
+      Layers:
+        - !Ref SharedLayerArn
+      Environment:
+        Variables:
+          RAG_LAMBDA_FUNCTION_NAME: !Sub 'sitara-intents-rag-${Environment}'
+          INTENTS_TOOLS_CRUD_LAMBDA_FUNCTION_NAME: !Sub 'sitara-intents-tools-crud-${Environment}'
+          SUPPORT_BUCKET_NAME: !Ref SupportFilesBucketName
+          ANTHROPIC_API_KEY: PLACEHOLDER_ANTHROPIC_API_KEY
+          ANTHROPIC_MEDIUM_MODEL: PLACEHOLDER_ANTHROPIC_MEDIUM_MODEL
+          ANTHROPIC_HIGH_MODEL: PLACEHOLDER_ANTHROPIC_HIGH_MODEL
+      Tags:
+        Project: sitaara
+        Environment: !Ref Environment
+
+  # ========================================
+  # 4. PROCESS MESSAGES (MAIN ORCHESTRATOR)
+  # ========================================
+  SitaraProcessMessagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sitara-process-messages-${Environment}'
+      CodeUri: ./lambdas/process-messages
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 90
+      Role: !Ref BuildWithGenAIRoleArn
+      Layers:
+        - !Ref SharedLayerArn
+      Environment:
+        Variables:
+          PYTHON_LAMBDA_NAME: !Sub 'sitara-python-executioner-${Environment}'
+          MONGO_DB_NAME: PLACEHOLDER_MONGO_DB_NAME
+          MONGO_URI: PLACEHOLDER_MONGO_URI
+          SUPPORT_BUCKET_NAME: !Ref SupportFilesBucketName
+          ANTHROPIC_API_KEY: PLACEHOLDER_ANTHROPIC_API_KEY
+          ANTHROPIC_MEDIUM_MODEL: PLACEHOLDER_ANTHROPIC_MEDIUM_MODEL
+          ANTHROPIC_HIGH_MODEL: PLACEHOLDER_ANTHROPIC_HIGH_MODEL
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !Ref SupportMessagesQueueArn
+            BatchSize: 10
+      Tags:
+        Project: sitaara
+        Environment: !Ref Environment
+
+  # ========================================
+  # 5. PYTHON TOOL EXECUTOR
+  # ========================================
+  SitaraPythonExecutionerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sitara-python-executioner-${Environment}'
+      CodeUri: ./lambdas/python-executioner
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      MemorySize: 512
+      Timeout: 60
+      Role: !Ref BuildWithGenAIRoleArn
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+      Tags:
+        Project: sitaara
+        Environment: !Ref Environment
+
+Outputs:
+  IntentsToolsCrudFunctionArn:
+    Description: 'Intents Tools CRUD Function ARN'
+    Value: !GetAtt SitaraIntentsToolsCrudFunction.Arn
+
+  IntentsRagFunctionArn:
+    Description: 'Intents RAG Function ARN'
+    Value: !GetAtt SitaraIntentsRagFunction.Arn
+
+  SupportCrudFunctionArn:
+    Description: 'Support CRUD Function ARN'
+    Value: !GetAtt SitaraSupportCrudFunction.Arn
+
+  ProcessMessagesFunctionArn:
+    Description: 'Process Messages Function ARN'
+    Value: !GetAtt SitaraProcessMessagesFunction.Arn
+
+  PythonExecutionerFunctionArn:
+    Description: 'Python Executioner Function ARN'
+    Value: !GetAtt SitaraPythonExecutionerFunction.Arn
+
+  AllFunctionNames:
+    Description: 'All Lambda Function Names'
+    Value: !Sub |
+      Admin CRUD: sitara-intents-tools-crud-${Environment}
+      Intents RAG: sitara-intents-rag-${Environment}
+      Support CRUD: sitara-support-crud-${Environment}
+      Process Messages: sitara-process-messages-${Environment}
+      Python Executioner: sitara-python-executioner-${Environment}

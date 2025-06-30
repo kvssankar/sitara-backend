@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sitaara Infrastructure - DynamoDB, SQS, S3'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+
+Resources:
+  # ========================================
+  # DYNAMODB TABLES
+  # ========================================
+  SupportCasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'SupportCases-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: caseId
+          AttributeType: S
+        - AttributeName: customerId
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+        - AttributeName: gsi2pk
+          AttributeType: S
+        - AttributeName: gsi2sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: caseId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: gsi2pk
+              KeyType: HASH
+            - AttributeName: gsi2sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: sitaara
+        - Key: Environment
+          Value: !Ref Environment
+
+  SupportMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'SupportMessages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: messageId
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: messageId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: sitaara
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ========================================
+  # SQS QUEUES
+  # ========================================
+  SupportMessagesDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'sitara-process-messages-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Project
+          Value: sitaara
+        - Key: Environment
+          Value: !Ref Environment
+
+  SupportMessagesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'support-messages-${Environment}'
+      MessageRetentionPeriod: 345600   # 4 days
+      VisibilityTimeoutSeconds: 120    # 2 minutes
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SupportMessagesDeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: sitaara
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ========================================
+  # S3 BUCKET
+  # ========================================
+  SupportFilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'sitaara-support-files-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+      Tags:
+        - Key: Project
+          Value: sitaara
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  SupportCasesTableName:
+    Description: 'DynamoDB Support Cases Table Name'
+    Value: !Ref SupportCasesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportCasesTable'
+
+  SupportCasesTableArn:
+    Description: 'DynamoDB Support Cases Table ARN'
+    Value: !GetAtt SupportCasesTable.Arn
+
+  SupportMessagesTableName:
+    Description: 'DynamoDB Support Messages Table Name'
+    Value: !Ref SupportMessagesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportMessagesTable'
+
+  SupportMessagesTableArn:
+    Description: 'DynamoDB Support Messages Table ARN'
+    Value: !GetAtt SupportMessagesTable.Arn
+
+  SupportMessagesQueueUrl:
+    Description: 'SQS Support Messages Queue URL'
+    Value: !Ref SupportMessagesQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportMessagesQueue'
+
+  SupportMessagesQueueArn:
+    Description: 'SQS Support Messages Queue ARN'
+    Value: !GetAtt SupportMessagesQueue.Arn
+
+  SupportMessagesDeadLetterQueueArn:
+    Description: 'SQS Dead Letter Queue ARN'
+    Value: !GetAtt SupportMessagesDeadLetterQueue.Arn
+
+  SupportFilesBucketName:
+    Description: 'S3 Bucket for Support Files'
+    Value: !Ref SupportFilesBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportFilesBucket'
+
+  SupportFilesBucketArn:
+    Description: 'S3 Support Files Bucket ARN'
+    Value: !GetAtt SupportFilesBucket.Arn

@@ -1,0 +1,14 @@
+{
+  "dev": {
+    "Environment": "dev",
+    "ProjectId": "PLACEHOLDER_PROJECT_ID"
+  },
+  "staging": {
+    "Environment": "staging",
+    "ProjectId": "PLACEHOLDER_PROJECT_ID"
+  },
+  "prod": {
+    "Environment": "prod",
+    "ProjectId": "PLACEHOLDER_PROJECT_ID"
+  }
+}

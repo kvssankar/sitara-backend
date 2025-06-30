@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sitaara API Gateway'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+  IntentsToolsCrudFunctionArn:
+    Type: String
+    Description: Intents Tools CRUD Function ARN
+  SupportCrudFunctionArn:
+    Type: String
+    Description: Support CRUD Function ARN
+
+Resources:
+  SitaaraApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      Name: !Sub 'sitaara-api-${Environment}'
+      Description: 'Sitaara Support Platform API Gateway'
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseTemplates:
+            application/json: '{"message": $context.error.messageString}'
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        DEFAULT_5XX:
+          ResponseTemplates:
+            application/json: '{"message": $context.error.messageString}'
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      DefinitionBody:
+        swagger: '2.0'
+        info:
+          title: !Sub 'Sitaara API - ${Environment}'
+          version: '1.0'
+        paths:
+          # Admin CRUD Routes
+          /intents:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IntentsToolsCrudFunctionArn}/invocations'
+          /intents/{intentid}:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IntentsToolsCrudFunctionArn}/invocations'
+          /tools:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IntentsToolsCrudFunctionArn}/invocations'
+          /tools/{name}:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IntentsToolsCrudFunctionArn}/invocations'
+          /support/cases/{caseId}/upload-url:
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IntentsToolsCrudFunctionArn}/invocations'
+          
+          # Support CRUD Routes
+          /support/cases:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportCrudFunctionArn}/invocations'
+          /support/cases/{caseId}:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportCrudFunctionArn}/invocations'
+          /support/cases/{caseId}/messages:
+            get:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportCrudFunctionArn}/invocations'
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportCrudFunctionArn}/invocations'
+
+  # Lambda Permissions for API Gateway
+  IntentsToolsCrudApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref IntentsToolsCrudFunctionArn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${SitaaraApiGateway}/*/ANY/*'
+
+  SupportCrudApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SupportCrudFunctionArn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${SitaaraApiGateway}/*/ANY/*'
+
+Outputs:
+  ApiGatewayUrl:
+    Description: 'API Gateway URL for Sitaara platform'
+    Value: !Sub 'https://${SitaaraApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref SitaaraApiGateway

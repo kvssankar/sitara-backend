@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sitaara - AI-Powered Support Case Resolution Platform - Main Template'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  ProjectId:
+    Type: String
+    Default: PLACEHOLDER_PROJECT_ID
+    Description: Project ID for MongoDB
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+      - x86_64
+    EphemeralStorage:
+      Size: 512
+    EventInvokeConfig:
+      MaximumEventAgeInSeconds: 21600
+      MaximumRetryAttempts: 2
+    Environment:
+      Variables:
+        REGION: !Ref AWS::Region
+        PROJECT_ID: !Ref ProjectId
+
+Resources:
+  # Infrastructure Stack
+  InfrastructureStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./infrastructure.yaml
+      Parameters:
+        Environment: !Ref Environment
+
+  # Shared Layer Stack
+  SharedLayerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./shared-layer.yaml
+      Parameters:
+        Environment: !Ref Environment
+
+  # IAM Roles Stack
+  IAMRolesStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./iam-roles.yaml
+      Parameters:
+        Environment: !Ref Environment
+        SupportCasesTableArn: !GetAtt InfrastructureStack.Outputs.SupportCasesTableArn
+        SupportMessagesTableArn: !GetAtt InfrastructureStack.Outputs.SupportMessagesTableArn
+        SupportMessagesQueueArn: !GetAtt InfrastructureStack.Outputs.SupportMessagesQueueArn
+        SupportMessagesDeadLetterQueueArn: !GetAtt InfrastructureStack.Outputs.SupportMessagesDeadLetterQueueArn
+        SupportFilesBucketArn: !GetAtt InfrastructureStack.Outputs.SupportFilesBucketArn
+
+  # Lambda Functions Stack
+  LambdaFunctionsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./lambda-functions.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectId: !Ref ProjectId
+        BuildWithGenAIRoleArn: !GetAtt IAMRolesStack.Outputs.BuildWithGenAIRoleArn
+        SharedLayerArn: !GetAtt SharedLayerStack.Outputs.SharedLayerArn
+        SupportCasesTableName: !GetAtt InfrastructureStack.Outputs.SupportCasesTableName
+        SupportMessagesTableName: !GetAtt InfrastructureStack.Outputs.SupportMessagesTableName
+        SupportMessagesQueueArn: !GetAtt InfrastructureStack.Outputs.SupportMessagesQueueArn
+        SupportFilesBucketName: !GetAtt InfrastructureStack.Outputs.SupportFilesBucketName
+
+  # API Gateway Stack
+  ApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./api-gateway.yaml
+      Parameters:
+        Environment: !Ref Environment
+        IntentsToolsCrudFunctionArn: !GetAtt LambdaFunctionsStack.Outputs.IntentsToolsCrudFunctionArn
+        SupportCrudFunctionArn: !GetAtt LambdaFunctionsStack.Outputs.SupportCrudFunctionArn
+
+Outputs:
+  ApiGatewayUrl:
+    Description: 'API Gateway URL for Sitaara platform'
+    Value: !GetAtt ApiGatewayStack.Outputs.ApiGatewayUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  AllFunctionNames:
+    Description: 'All Lambda Function Names'
+    Value: !GetAtt LambdaFunctionsStack.Outputs.AllFunctionNames

@@ -219,8 +219,9 @@ console.log(`[handler] Received batch with ${event.Records.length} messages`);
 -   **Queue-based processing** that handles traffic spikes
 -   **Database scaling** through proper partitioning strategies
 
+
+## Infrastructure as Code
+
+The project includes comprehensive AWS SAM templates (`template.yaml`, `infrastructure.yaml`, `lambda-functions.yaml`, etc.) that define the complete serverless architecture with proper environment separation and modular design. Please note that these templates serve as infrastructure blueprints and require configuration of environment-specific values (MongoDB connections, OpenSearch endpoints, API keys) before deployment. The SAM files provide a solid foundation for Infrastructure as Code practices, though additional setup steps are needed to make them fully operational in your environment.
+
 These best practices ensure that Sitaara can scale from handling a few support tickets to thousands per minute while maintaining high performance, security, and cost efficiency - all hallmarks of well-designed serverless architecture.
-
-
-
-
