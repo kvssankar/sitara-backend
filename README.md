@@ -24,4 +24,4 @@ Build and deploy custom Python scripts as tools that can be executed within conv
 
 ### [Click to understand how AWS Lambda is the ❤️ of the solution](ARCHITECTURE.md)
 
-[Demo Website?](TRYIT.md)
+[Demo Website](TRYIT.md)
